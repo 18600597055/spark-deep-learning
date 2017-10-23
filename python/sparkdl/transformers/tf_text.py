@@ -12,23 +12,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
+import re
 import numpy as np
-from pyspark.ml import Transformer
-from pyspark.ml.feature import Word2Vec
+
+from pyspark.ml import Estimator, Transformer, Pipeline
+from pyspark.ml.classification import LogisticRegression
+from pyspark.ml.feature import HashingTF, Word2Vec
+
 from pyspark.sql.functions import udf
 from pyspark.sql import functions as f
 from pyspark.sql.types import *
 from pyspark.sql.functions import lit
+
 from sparkdl.param.shared_params import HasEmbeddingSize, HasSequenceLength
 from sparkdl.param import (
     keyword_only, HasInputCol, HasOutputCol)
-import re
-
 import sparkdl.utils.jvmapi as JVMAPI
 
 
-class TFTextTransformer(Transformer, HasInputCol, HasOutputCol, HasEmbeddingSize, HasSequenceLength):
+class SKLearnTextTransformer(Transformer, Estimator, HasInputCol, HasOutputCol):
+    @keyword_only
+    def __init__(self, inputCol=None, outputCol=None):
+        super(SKLearnTextTransformer, self).__init__()
+        kwargs = self._input_kwargs
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCol=None, outputCol=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, dataset):
+        ds = dataset.withColumn("words", f.split(dataset[self.getInputCol()], "\\s+"))
+        hashingTF = HashingTF(inputCol="words", outputCol=self.getOutputCol())
+        new_ds = hashingTF.transform(ds)
+        new_ds.show(truncate=False)
+        return new_ds
+
+    def _fit(self, dataset):
+        pass
+
+
+class TFTextTransformer(Transformer, Estimator, HasInputCol, HasOutputCol, HasEmbeddingSize, HasSequenceLength):
     """
     Convert sentence/document to a 2-D Array eg. [[word embedding],[....]]  in DataFrame which can be processed
     directly by tensorflow or keras who's backend is tensorflow.
@@ -41,6 +66,10 @@ class TFTextTransformer(Transformer, HasInputCol, HasOutputCol, HasEmbeddingSize
     * Create a new dataframe with columns like new 2-D array , vocab_size, embedding_size
     * return then new dataframe
     """
+
+    def _fit(self, dataset):
+        pass
+
     VOCAB_SIZE = 'vocab_size'
     EMBEDDING_SIZE = 'embedding_size'
 

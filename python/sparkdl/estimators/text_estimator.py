@@ -38,13 +38,13 @@ if sys.version_info[:2] <= (2, 7):
 else:
     import _pickle as pickle
 
-__all__ = ['TFTextFileEstimator']
+__all__ = ['TextEstimator']
 
 logger = logging.getLogger('sparkdl')
 
 
-class TFTextFileEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, KafkaParam, FitParam, RunningMode,
-                          MapFnParam):
+class TextEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, KafkaParam, FitParam, RunningMode,
+                    MapFnParam):
     """
     Build a Estimator from tensorflow or keras when backend is tensorflow.
 
@@ -102,10 +102,10 @@ class TFTextFileEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, Kaf
             batch_data = feed_dict(data)
             sess.run(train_step, feed_dict={input_x: batch_data})
 
-     finally we can create  TFTextFileEstimator to train our model:
+     finally we can create  TextEstimator to train our model:
 
      .. code-block:: python
-            estimator = TFTextFileEstimator(inputCol="sentence_matrix",
+            estimator = TextEstimator(inputCol="sentence_matrix",
                                             outputCol="sentence_matrix", labelCol="preds",
                                             kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
                                                     "group_id": "sdl_1"},
@@ -118,7 +118,7 @@ class TFTextFileEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, Kaf
     @keyword_only
     def __init__(self, inputCol=None, outputCol=None, labelCol=None, kafkaParam=None, fitParam=None,
                  runningMode="Normal", mapFnParam=None):
-        super(TFTextFileEstimator, self).__init__()
+        super(TextEstimator, self).__init__()
         kwargs = self._input_kwargs
         self.setParams(**kwargs)
 

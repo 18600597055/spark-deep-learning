@@ -16,7 +16,7 @@
 import shutil
 import threading
 import sys
-from sparkdl.estimators.tf_text_file_estimator import TFTextFileEstimator, KafkaMockServer
+from sparkdl.estimators.text_estimator import TextEstimator, KafkaMockServer
 from sparkdl.transformers.tf_text import TFTextTransformer
 from ..tests import SparkDLTestCase
 
@@ -135,13 +135,13 @@ class TFTextFileEstimatorTest(SparkDLTestCase):
         import tempfile
         mock_kafka_file = tempfile.mkdtemp()
         # create a estimator to training where map_fun contains tensorflow's code
-        estimator = TFTextFileEstimator(inputCol="sentence_matrix", outputCol="sentence_matrix", labelCol="preds",
-                                        kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
-                                                    "mock_kafka_file": mock_kafka_file,
-                                                    "group_id": "sdl_1", "test_mode": True},
-                                        runningMode="Normal",
-                                        fitParam=[{"epochs": 5, "batch_size": 64}, {"epochs": 5, "batch_size": 1}],
-                                        mapFnParam=map_fun)
+        estimator = TextEstimator(inputCol="sentence_matrix", outputCol="sentence_matrix", labelCol="preds",
+                                  kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
+                                              "mock_kafka_file": mock_kafka_file,
+                                              "group_id": "sdl_1", "test_mode": True},
+                                  runningMode="Normal",
+                                  fitParam=[{"epochs": 5, "batch_size": 64}, {"epochs": 5, "batch_size": 1}],
+                                  mapFnParam=map_fun)
         estimator.fit(df).collect()
         shutil.rmtree(mock_kafka_file)
 

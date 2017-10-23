@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from sparkdl.estimators.tf_text_file_estimator import TFTextFileEstimator, KafkaMockServer
+from sparkdl.estimators.text_estimator import TextEstimator, KafkaMockServer
 from sparkdl.transformers.tf_text import TFTextTransformer
 
 
@@ -168,8 +168,8 @@ transformer = TFTextTransformer(
 df = transformer.transform(documentDF)
 
 # create a estimator to training where map_fun contains tensorflow's code
-estimator = TFTextFileEstimator(inputCol="sentence_matrix", outputCol="sentence_matrix", labelCol="preds",
-                                fitParam=[{"epochs": 1, "cluster_size": 2, "batch_size": 1, "model": "/tmp/model"}],
-                                runningMode="TFoS",
-                                mapFnParam=map_fun)
+estimator = TextEstimator(inputCol="sentence_matrix", outputCol="sentence_matrix", labelCol="preds",
+                          fitParam=[{"epochs": 1, "cluster_size": 2, "batch_size": 1, "model": "/tmp/model"}],
+                          runningMode="TFoS",
+                          mapFnParam=map_fun)
 estimator.fit(df).collect()
