@@ -239,7 +239,7 @@ class TextEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, KafkaPara
 
         # Obtain params for this estimator instance
         baseParamMap = self.extractParamMap()
-        baseParamDict = dict([(param.name, val) for param, val in baseParamMap.items()])
+        baseParamDict = dict([(param.name, val) for param, val in baseParamMap.items() if param.name != "mapFnParam"])
         baseParamDictBc = sc.broadcast(baseParamDict)
 
         def _local_fit(override_param_map):
@@ -291,12 +291,14 @@ class TextEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, KafkaPara
                 finally:
                     consumer.close()
 
-                self.getMapFnParam()(args={"feature": inputCol,
-                                           "label": labelCol,
-                                           "vacab_size": vocab_s,
-                                           "embedding_size": embedding_size,
-                                           "params": params}, ctx=None, _read_data=_read_data,
-                                     )
+            result = self.getMapFnParam()(args={"feature": inputCol,
+                                                "label": labelCol,
+                                                "vacab_size": vocab_s,
+                                                "embedding_size": embedding_size,
+                                                "params": params},
+                                          ctx=None,
+                                          _read_data=_read_data)
+            return result
 
         return paramMapsRDD.map(lambda paramMap: (paramMap, _local_fit(paramMap)))
 
@@ -329,6 +331,8 @@ class KafkaMockServer(object):
 
     def flush(self):
         with open(self._kafka_mock_server_tmp_file_ + "/" + str(self.index), "wb") as f:
+            print("#### save {} elements to {} ####".format(len(self.queue),
+                                                            self._kafka_mock_server_tmp_file_ + "/" + str(self.index)))
             pickle.dump(self.queue, f)
         self.queue = []
 
@@ -341,7 +345,7 @@ class KafkaMockServer(object):
 
         records = []
         for file in os.listdir(self._kafka_mock_server_tmp_file_):
-            with open(self._kafka_mock_server_tmp_file_ + "/" + file, "wb") as f:
+            with open(self._kafka_mock_server_tmp_file_ + "/" + file, "rb") as f:
                 tmp = pickle.load(f)
                 records += tmp
         result = {}

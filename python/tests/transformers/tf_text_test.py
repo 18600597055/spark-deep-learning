@@ -16,6 +16,12 @@
 import shutil
 import threading
 import sys
+
+from pyspark.ml import Pipeline
+from pyspark.ml.feature import StringIndexer
+from sklearn import svm
+from sklearn.model_selection import GridSearchCV
+
 from sparkdl.estimators.text_estimator import TextEstimator, KafkaMockServer
 from sparkdl.transformers.tf_text import TFTextTransformer
 from ..tests import SparkDLTestCase
@@ -116,7 +122,7 @@ def map_fun(args={}, ctx=None, _read_data=None):
     sess.close()
 
 
-class TFTextFileEstimatorTest(SparkDLTestCase):
+class TFTextEstimatorTest(SparkDLTestCase):
     def test_trainText(self):
         input_col = "text"
         output_col = "sentence_matrix"
@@ -143,6 +149,75 @@ class TFTextFileEstimatorTest(SparkDLTestCase):
                                   fitParam=[{"epochs": 5, "batch_size": 64}, {"epochs": 5, "batch_size": 1}],
                                   mapFnParam=map_fun)
         estimator.fit(df).collect()
+        shutil.rmtree(mock_kafka_file)
+
+
+class TFTextTransformerSkLearnTest(SparkDLTestCase):
+    def test_trainText(self):
+        documentDF = self.session.createDataFrame([
+            ("Hi I heard about Spark", "spark"),
+            ("I wish Java could use case classes", "java"),
+            ("Logistic regression models are neat", "mlib"),
+            ("Logistic regression models are neat", "spark"),
+            ("Logistic regression models are neat", "mlib"),
+            ("Logistic regression models are neat", "java"),
+            ("Logistic regression models are neat", "spark"),
+            ("Logistic regression models are neat", "java"),
+            ("Logistic regression models are neat", "mlib")
+        ], ["text", "preds"])
+
+        features = TFTextTransformer(
+            inputCol="text", outputCol="features", shape=(-1,), embeddingSize=100, sequenceLength=64)
+        ds = features.transform(documentDF)
+        result = ds.take(1)[0]
+        self.assertTrue(len(result["features"]) == 100 * 64)
+
+
+class TFTextEstimatorSkLearnTest(SparkDLTestCase):
+    def test_trainText(self):
+        documentDF = self.session.createDataFrame([
+            ("Hi I heard about Spark", "spark"),
+            ("I wish Java could use case classes", "java"),
+            ("Logistic regression models are neat", "mlib"),
+            ("Logistic regression models are neat", "spark"),
+            ("Logistic regression models are neat", "mlib"),
+            ("Logistic regression models are neat", "java"),
+            ("Logistic regression models are neat", "spark"),
+            ("Logistic regression models are neat", "java"),
+            ("Logistic regression models are neat", "mlib")
+        ], ["text", "preds"])
+
+        # transform text column to sentence_matrix column which contains 2-D array.
+        features = TFTextTransformer(
+            inputCol="text", outputCol="features", shape=(-1,), embeddingSize=100, sequenceLength=64)
+
+        indexer = StringIndexer(inputCol="preds", outputCol="labels")
+
+        pipline = Pipeline(stages=[features, indexer])
+        ds = pipline.fit(documentDF).transform(documentDF)
+        import tempfile
+        mock_kafka_file = tempfile.mkdtemp()
+
+        def sk_map_fun(args={}, ctx=None, _read_data=None):
+            data = [item for item in _read_data()]
+            parameters = {'kernel': ('linear', 'rbf')}
+            svr = svm.SVC()
+            clf = GridSearchCV(svr, parameters)
+            X = [x["features"] for x in data[0]]
+            y = [int(x["labels"]) for x in data[0]]
+            model = clf.fit(X, y)
+            print(model.best_estimator_)
+            return ""
+
+        # create a estimator to training where map_fun contains tensorflow's code
+        estimator = TextEstimator(inputCol="features", outputCol="features", labelCol="labels",
+                                  kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
+                                              "mock_kafka_file": mock_kafka_file,
+                                              "group_id": "sdl_1", "test_mode": True},
+                                  runningMode="Normal",
+                                  fitParam=[{"epochs": 5, "batch_size": 64}, {"epochs": 5, "batch_size": 1}],
+                                  mapFnParam=sk_map_fun)
+        estimator.fit(ds).collect()
         shutil.rmtree(mock_kafka_file)
 
 

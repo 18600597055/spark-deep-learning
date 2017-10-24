@@ -15,15 +15,16 @@
 import re
 import numpy as np
 
-from pyspark.ml import Estimator, Transformer, Pipeline
-from pyspark.ml.classification import LogisticRegression
-from pyspark.ml.feature import HashingTF, Word2Vec
+import jieba
 
+from pyspark.ml import Estimator, Transformer, Pipeline
+from pyspark.ml.feature import HashingTF, Word2Vec, Param, Params, TypeConverters
 from pyspark.sql.functions import udf
 from pyspark.sql import functions as f
 from pyspark.sql.types import *
 from pyspark.sql.functions import lit
 
+from sparkdl.nlp.text_analysis import TextAnalysis
 from sparkdl.param.shared_params import HasEmbeddingSize, HasSequenceLength
 from sparkdl.param import (
     keyword_only, HasInputCol, HasOutputCol)
@@ -73,14 +74,38 @@ class TFTextTransformer(Transformer, Estimator, HasInputCol, HasOutputCol, HasEm
     VOCAB_SIZE = 'vocab_size'
     EMBEDDING_SIZE = 'embedding_size'
 
+    textAnalysisParams = Param(Params._dummy(), "textAnalysisParams", "text analysis params",
+                               typeConverter=TypeConverters.identity)
+
+    def setTextAnalysisParams(self, value):
+        return self._set(textAnalysisParams=value)
+
+    def getTextAnalysisParams(self):
+        return self.getOrDefault(self.textAnalysisParams)
+
+    shape = Param(Params._dummy(), "shape", "result shape",
+                  typeConverter=TypeConverters.identity)
+
+    def setShape(self, value):
+        return self._set(shape=value)
+
+    def getShape(self):
+        return self.getOrDefault(self.shape)
+
     @keyword_only
-    def __init__(self, inputCol=None, outputCol=None, embeddingSize=100, sequenceLength=64):
+    def __init__(self, inputCol=None, outputCol=None, textAnalysisParams={}, shape=(64, 100), embeddingSize=100,
+                 sequenceLength=64):
         super(TFTextTransformer, self).__init__()
         kwargs = self._input_kwargs
+        self._setDefault(textAnalysisParams={})
+        self._setDefault(embeddingSize=100)
+        self._setDefault(sequenceLength=64)
+        self._setDefault(shape=(self.getSequenceLength(), self.getEmbeddingSize()))
         self.setParams(**kwargs)
 
     @keyword_only
-    def setParams(self, inputCol=None, outputCol=None, embeddingSize=100, sequenceLength=64):
+    def setParams(self, inputCol=None, outputCol=None, textAnalysisParams={}, shape=(64, 100), embeddingSize=100,
+                  sequenceLength=64):
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
@@ -90,8 +115,23 @@ class TFTextTransformer(Transformer, Estimator, HasInputCol, HasOutputCol, HasEm
         word2vec = Word2Vec(vectorSize=self.getEmbeddingSize(), minCount=1, inputCol=self.getInputCol(),
                             outputCol="word_embedding")
 
+        archiveAutoExtract = sc._conf.get("spark.master").lower().startswith("yarn")
+        zipfiles = []
+        if not archiveAutoExtract and "dicZipName" in self.getTextAnalysisParams():
+            dicZipName = self.getTextAnalysisParams()["dicZipName"]
+            if "spark.files" in sc._conf:
+                zipfiles = [f.split("/")[-1] for f in sc._conf.get("spark.files").split(",") if
+                            f.endswith("{}.zip".format(dicZipName))]
+
+        dicDir = self.getTextAnalysisParams()["dicDir"] if "dicDir" in self.getTextAnalysisParams() else ""
+
+        def lcut(s):
+            TextAnalysis.load_dic(dicDir, archiveAutoExtract, zipfiles)
+            return jieba.lcut(s)
+
+        lcut_udf = udf(lcut, ArrayType(StringType()))
         vectorsDf = word2vec.fit(
-            dataset.select(f.split(self.getInputCol(), "\\s+").alias(self.getInputCol()))).getVectors()
+            dataset.select(lcut_udf(self.getInputCol()).alias(self.getInputCol()))).getVectors()
 
         """
           It's strange here that after calling getVectors the df._sc._jsc will lose and this is
@@ -108,6 +148,8 @@ class TFTextTransformer(Transformer, Estimator, HasInputCol, HasOutputCol, HasEm
         word_embedding["unk"] = np.zeros(self.getEmbeddingSize()).tolist()
         local_word_embedding = sc.broadcast(word_embedding)
 
+        not_array_2d = len(self.getShape()) != 2 or self.getShape()[0] != self.getSequenceLength()
+
         def convert_word_to_index(s):
             def _pad_sequences(sequences, maxlen=None):
                 new_sequences = []
@@ -122,9 +164,15 @@ class TFTextTransformer(Transformer, Estimator, HasInputCol, HasOutputCol, HasEm
             new_q = [local_word_embedding.value[word] for word in re.split(r"\s+", s) if
                      word in local_word_embedding.value.keys()]
             result = _pad_sequences(new_q, maxlen=self.getSequenceLength())
+            if not_array_2d:
+                result = np.array(result).reshape(self.getShape()).tolist()
             return result
 
         cwti_udf = udf(convert_word_to_index, ArrayType(ArrayType(FloatType())))
+
+        if not_array_2d:
+            cwti_udf = udf(convert_word_to_index, ArrayType(FloatType()))
+
         doc_martic = (dataset.withColumn(self.getOutputCol(), cwti_udf(self.getInputCol()).alias(self.getOutputCol()))
                       .withColumn(self.VOCAB_SIZE, lit(len(word_embedding)))
                       .withColumn(self.EMBEDDING_SIZE, lit(self.getEmbeddingSize()))
