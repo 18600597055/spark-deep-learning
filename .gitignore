@@ -24,3 +24,5 @@ project/plugins/project/
 
 # MacOS
 .DS_Store
+
+python/spark_deep_learning.egg-info

@@ -14,5 +14,3 @@ tensorflowonspark>=1.0.5
 tensorflow-tensorboard>=0.1.6
 jieba>=0.39
 spark-sklearn>=0.2.2
-
-
