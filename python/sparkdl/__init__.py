@@ -13,15 +13,17 @@
 # limitations under the License.
 #
 
-from .image.imageIO import imageSchema, imageType, readImages
-from .transformers.keras_image import KerasImageFileTransformer
-from .transformers.named_image import DeepImagePredictor, DeepImageFeaturizer
-from .transformers.tf_image import TFImageTransformer
-from .transformers.utils import imageInputPlaceholder
+from sparkdl.image.imageIO import imageSchema, imageType, readImages
+from sparkdl.transformers.keras_image import KerasImageFileTransformer
+from sparkdl.transformers.named_image import DeepImagePredictor, DeepImageFeaturizer
+from sparkdl.transformers.tf_image import TFImageTransformer
+from sparkdl.transformers.utils import imageInputPlaceholder
+from sparkdl.estimators.text_estimator import TextEstimator, KafkaMockServer
+from sparkdl.transformers.tf_text import TFTextTransformer
 
 __all__ = [
     'imageSchema', 'imageType', 'readImages',
-    'TFImageTransformer', 'TFTextTransformer',
+    'TFImageTransformer', 'TextEstimator', 'KafkaMockServer', 'TFTextTransformer',
     'DeepImagePredictor', 'DeepImageFeaturizer',
-    'KerasImageFileTransformer', 'TFTextFileEstimator',
+    'KerasImageFileTransformer',
     'imageInputPlaceholder']

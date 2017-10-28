@@ -38,12 +38,12 @@ if sys.version_info[:2] <= (2, 7):
 else:
     import _pickle as pickle
 
-__all__ = ['TextEstimator']
+__all__ = ['TextEstimator', "KafkaMockServer"]
 
 logger = logging.getLogger('sparkdl')
 
 
-class TextEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, KafkaParam, FitParam, RunningMode,
+class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                     MapFnParam):
     """
     Build a Estimator from tensorflow or keras when backend is tensorflow.
@@ -116,14 +116,14 @@ class TextEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, KafkaPara
     """
 
     @keyword_only
-    def __init__(self, inputCol=None, outputCol=None, labelCol=None, kafkaParam=None, fitParam=None,
+    def __init__(self, kafkaParam=None, fitParam=None,
                  runningMode="Normal", mapFnParam=None):
         super(TextEstimator, self).__init__()
         kwargs = self._input_kwargs
         self.setParams(**kwargs)
 
     @keyword_only
-    def setParams(self, inputCol=None, outputCol=None, labelCol=None, kafkaParam=None, fitParam=None,
+    def setParams(self, kafkaParam=None, fitParam=None,
                   runningMode="Normal", mapFnParam=None):
         kwargs = self._input_kwargs
         return self._set(**kwargs)
@@ -149,14 +149,6 @@ class TextEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, KafkaPara
             return self._fitInParallel(dataset, paramMaps)
 
     def _validateParams(self):
-        """
-        Check Param values so we can throw errors on the driver, rather than workers.
-        :return: True if parameters are valid
-        """
-        if not self.isDefined(self.inputCol):
-            raise ValueError("Input column must be defined")
-        if not self.isDefined(self.outputCol):
-            raise ValueError("Output column must be defined")
         return True
 
     def _clusterModelDefaultValue(self, sc, args):
@@ -174,18 +166,10 @@ class TextEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, KafkaPara
     def _fitInCluster(self, dataset, paramMaps):
         sc = JVMAPI._curr_sc()
 
-        temp_item = dataset.take(1)[0]
-        vocab_s = temp_item["vocab_size"]
-        embedding_size = temp_item["embedding_size"]
-
         baseParamMap = self.extractParamMap()
         baseParamDict = dict([(param.name, val) for param, val in baseParamMap.items()])
 
         args = self._clusterModelDefaultValue(sc, paramMaps[0])
-        args["feature"] = self.getInputCol()
-        args["label"] = self.getLabelCol()
-        args["vacab_size"] = vocab_s
-        args["embedding_size"] = embedding_size
         args["params"] = baseParamDict
 
         cluster = TFCluster.run(sc, self.getMapFnParam(), args, args['cluster_size'], args['num_ps'],
@@ -195,9 +179,6 @@ class TextEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, KafkaPara
         cluster.shutdown()
 
     def _fitInParallel(self, dataset, paramMaps):
-
-        inputCol = self.getInputCol()
-        labelCol = self.getLabelCol()
 
         from time import gmtime, strftime
         kafaParams = self.getKafkaParam()
@@ -229,10 +210,6 @@ class TextEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, KafkaPara
             t.start()
 
         stop_flag_num = dataset.rdd.getNumPartitions()
-        temp_item = dataset.take(1)[0]
-        vocab_s = temp_item["vocab_size"]
-        embedding_size = temp_item["embedding_size"]
-
         sc = JVMAPI._curr_sc()
 
         paramMapsRDD = sc.parallelize(paramMaps, numSlices=len(paramMaps))
@@ -291,11 +268,7 @@ class TextEstimator(Estimator, HasInputCol, HasOutputCol, HasLabelCol, KafkaPara
                 finally:
                     consumer.close()
 
-            result = self.getMapFnParam()(args={"feature": inputCol,
-                                                "label": labelCol,
-                                                "vacab_size": vocab_s,
-                                                "embedding_size": embedding_size,
-                                                "params": params},
+            result = self.getMapFnParam()(args={"params": params},
                                           ctx=None,
                                           _read_data=_read_data)
             return result

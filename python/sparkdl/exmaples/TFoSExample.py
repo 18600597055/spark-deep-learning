@@ -12,11 +12,8 @@ def map_fun(args={}, ctx=None, _read_data=None):
     import time
 
     print(args)
-
-    EMBEDDING_SIZE = args["embedding_size"]
-    feature = args['feature']
-    label = args['label']
     params = args['params']['fitParam'][0]
+    EMBEDDING_SIZE = params["embedding_size"]
     SEQUENCE_LENGTH = 64
 
     clusterMode = False if ctx is None else True
@@ -168,8 +165,7 @@ transformer = TFTextTransformer(
 df = transformer.transform(documentDF)
 
 # create a estimator to training where map_fun contains tensorflow's code
-estimator = TextEstimator(inputCol="sentence_matrix", outputCol="sentence_matrix", labelCol="preds",
-                          fitParam=[{"epochs": 1, "cluster_size": 2, "batch_size": 1, "model": "/tmp/model"}],
+estimator = TextEstimator(fitParam=[{"epochs": 1, "cluster_size": 2, "batch_size": 1, "model": "/tmp/model"}],
                           runningMode="TFoS",
                           mapFnParam=map_fun)
 estimator.fit(df).collect()

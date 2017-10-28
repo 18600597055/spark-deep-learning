@@ -22,6 +22,8 @@ from pyspark.ml.feature import StringIndexer
 from sklearn import svm
 from sklearn.model_selection import GridSearchCV
 
+from sparkdl.transformers.tf_text import CategoricalBinaryTransformer, CategoricalOneHotTransformer, \
+    TextAnalysisTransformer, TextEmbeddingSequenceTransformer, CombineBinaryColumnTransformer
 from sparkdl.estimators.text_estimator import TextEstimator, KafkaMockServer
 from sparkdl.transformers.tf_text import TFTextTransformer
 from ..tests import SparkDLTestCase
@@ -34,8 +36,8 @@ else:
 
 def map_fun(args={}, ctx=None, _read_data=None):
     import tensorflow as tf
-    EMBEDDING_SIZE = args["embedding_size"]
     params = args['params']['fitParam']
+    EMBEDDING_SIZE = params["embedding_size"]
     SEQUENCE_LENGTH = 64
 
     def feed_dict(batch):
@@ -141,12 +143,12 @@ class TFTextEstimatorTest(SparkDLTestCase):
         import tempfile
         mock_kafka_file = tempfile.mkdtemp()
         # create a estimator to training where map_fun contains tensorflow's code
-        estimator = TextEstimator(inputCol="sentence_matrix", outputCol="sentence_matrix", labelCol="preds",
-                                  kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
+        estimator = TextEstimator(kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
                                               "mock_kafka_file": mock_kafka_file,
                                               "group_id": "sdl_1", "test_mode": True},
                                   runningMode="Normal",
-                                  fitParam=[{"epochs": 5, "batch_size": 64}, {"epochs": 5, "batch_size": 1}],
+                                  fitParam=[{"epochs": 5, "batch_size": 64, "embedding_size": 100},
+                                            {"epochs": 5, "batch_size": 1, "embedding_size": 100}],
                                   mapFnParam=map_fun)
         estimator.fit(df).collect()
         shutil.rmtree(mock_kafka_file)
@@ -171,6 +173,52 @@ class TFTextTransformerSkLearnTest(SparkDLTestCase):
         ds = features.transform(documentDF)
         result = ds.take(1)[0]
         self.assertTrue(len(result["features"]) == 100 * 64)
+
+
+class CategoricalTransformerTest(SparkDLTestCase):
+    def test_trainText(self):
+        documentDF = self.session.createDataFrame([
+            ("Hi I heard about Spark", "spark"),
+            ("I wish Java could use case classes", "java"),
+            ("Logistic regression models are neat", "mlib"),
+            ("Logistic regression models are neat", "spark"),
+            ("Logistic regression models are neat", "mlib"),
+            ("Logistic regression models are neat", "java"),
+            ("Logistic regression models are neat", "spark"),
+            ("Logistic regression models are neat", "java"),
+            ("Logistic regression models are neat", "mlib")
+        ], ["text", "preds"])
+
+        features = CategoricalBinaryTransformer(
+            inputCols=["text", "preds"], outputCols=["text1", "preds1"], embeddingSize=12)
+        ds = features.transform(documentDF)
+        ds.show()
+        result = ds.take(1)[0]
+        self.assertTrue(len(result["text1"]) == 12)
+
+        cbct = CombineBinaryColumnTransformer(
+            inputCols=["text1", "preds1"], outputCol="text2")
+        ds = cbct.transform(ds)
+        ds.show()
+        result = ds.take(1)[0]
+        self.assertTrue(len(result["text2"]) == 24)
+
+        features = CategoricalOneHotTransformer(
+            inputCols=["text", "preds"], outputCol="features")
+        ds = features.transform(documentDF)
+        ds.show()
+        result = ds.take(1)[0]
+        # self.assertTrue(len(result["features"]) == 24)
+
+        tat = TextAnalysisTransformer(
+            inputCols=["text", "preds"], outputCols=["text1", "preds2"])
+        ds = tat.transform(documentDF)
+        ds.show()
+
+        test = TextEmbeddingSequenceTransformer(
+            inputCols=["text1", "preds2"], outputCols=["text11", "preds21"])
+        ds2 = test.transform(ds)
+        ds2.show()
 
 
 class TFTextEstimatorSkLearnTest(SparkDLTestCase):
@@ -210,8 +258,7 @@ class TFTextEstimatorSkLearnTest(SparkDLTestCase):
             return ""
 
         # create a estimator to training where map_fun contains tensorflow's code
-        estimator = TextEstimator(inputCol="features", outputCol="features", labelCol="labels",
-                                  kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
+        estimator = TextEstimator(kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
                                               "mock_kafka_file": mock_kafka_file,
                                               "group_id": "sdl_1", "test_mode": True},
                                   runningMode="Normal",

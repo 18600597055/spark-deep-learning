@@ -129,6 +129,32 @@ class HasInputCol(Params):
         return self.getOrDefault(self.inputCol)
 
 
+class HasInputCols(Params):
+    inputCols = Param(Params._dummy(), "inputCols", "input column names.", typeConverter=TypeConverters.identity)
+
+    def __init__(self):
+        super(HasInputCols, self).__init__()
+
+    def setInputCols(self, value):
+        return self._set(inputCols=value)
+
+    def getInputCols(self):
+        return self.getOrDefault(self.inputCols)
+
+
+class HasOutputCols(Params):
+    outputCols = Param(Params._dummy(), "outputCols", "output column names.", typeConverter=TypeConverters.identity)
+
+    def __init__(self):
+        super(HasOutputCols, self).__init__()
+
+    def setOutputCols(self, value):
+        return self._set(outputCols=value)
+
+    def getOutputCols(self):
+        return self.getOrDefault(self.outputCols)
+
+
 class HasEmbeddingSize(Params):
     """
     Mixin for param embeddingSize
@@ -209,6 +235,21 @@ class HasOutputCol(Params):
         Gets the value of outputCol or its default value.
         """
         return self.getOrDefault(self.outputCol)
+
+
+class ColumnSuffix(Params):
+    columnSuffix = Param(Params._dummy(),
+                         "columnSuffix", "output column name suffix.", typeConverter=TypeConverters.toString)
+
+    def __init__(self):
+        super(ColumnSuffix, self).__init__()
+        self._setDefault(outputCol=self.uid + '__output')
+
+    def setColumnSuffix(self, value):
+        return self._set(columnSuffix=value)
+
+    def getColumnSuffix(self):
+        return self.getOrDefault(self.columnSuffix)
 
 
 ############################################

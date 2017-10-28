@@ -18,40 +18,280 @@ import numpy as np
 import jieba
 
 from pyspark.ml import Estimator, Transformer, Pipeline
-from pyspark.ml.feature import HashingTF, Word2Vec, Param, Params, TypeConverters
-from pyspark.sql.functions import udf
-from pyspark.sql import functions as f
+from pyspark.ml.feature import Word2Vec, Param, Params, TypeConverters, StringIndexer, OneHotEncoder
+from pyspark.sql import SparkSession
 from pyspark.sql.types import *
-from pyspark.sql.functions import lit
+from pyspark.sql.functions import *
+from pyspark.mllib.regression import LabeledPoint
 
 from sparkdl.nlp.text_analysis import TextAnalysis
-from sparkdl.param.shared_params import HasEmbeddingSize, HasSequenceLength
+from sparkdl.param.shared_params import HasEmbeddingSize, HasSequenceLength, HasInputCols, ColumnSuffix, HasOutputCols
 from sparkdl.param import (
     keyword_only, HasInputCol, HasOutputCol)
 import sparkdl.utils.jvmapi as JVMAPI
 
 
-class SKLearnTextTransformer(Transformer, Estimator, HasInputCol, HasOutputCol):
+class CategoricalBinaryTransformer(Transformer, Estimator, HasInputCols, HasOutputCols, HasEmbeddingSize):
     @keyword_only
-    def __init__(self, inputCol=None, outputCol=None):
-        super(SKLearnTextTransformer, self).__init__()
+    def __init__(self, inputCols=None, outputCols=None, embeddingSize=12):
+        super(CategoricalBinaryTransformer, self).__init__()
         kwargs = self._input_kwargs
+        self._setDefault(embeddingSize=12)
         self.setParams(**kwargs)
 
     @keyword_only
-    def setParams(self, inputCol=None, outputCol=None):
+    def setParams(self, inputCols=None, outputCols=None, embeddingSize=12):
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
     def _transform(self, dataset):
-        ds = dataset.withColumn("words", f.split(dataset[self.getInputCol()], "\\s+"))
-        hashingTF = HashingTF(inputCol="words", outputCol=self.getOutputCol())
-        new_ds = hashingTF.transform(ds)
-        new_ds.show(truncate=False)
-        return new_ds
+        def convert_int_to_binary_string(num, length=self.getEmbeddingSize()):
+            wow_num = 0
+            try:
+                wow_num = int(num)
+                if wow_num < 0:
+                    wow_num = -wow_num
+            except:
+                wow_num = 0
+            return [int(i) for i in ('{0:0' + str(length) + 'b}').format(wow_num)]
+
+        convert_int_to_binary_string_udf = udf(convert_int_to_binary_string, ArrayType(IntegerType()))
+        indexer_stages = [
+            StringIndexer(**dict(inputCol=item, outputCol=item + "_StringIndex_CategoricalBinaryTransformer")) for
+            item in
+            self.getInputCols()]
+
+        indexPipeLine = Pipeline(stages=indexer_stages)
+        dataset_with_index = indexPipeLine.fit(dataset).transform(dataset)
+
+        select_expr = [(convert_int_to_binary_string_udf(input + "_StringIndex_CategoricalBinaryTransformer"),
+                        self.getOutputCols()[self.getInputCols().index(input)])
+                       for
+                       input in
+                       self.getInputCols()]
+        final_ds = dataset_with_index
+        for s_expr in select_expr:
+            final_ds = final_ds.withColumn(s_expr[1], s_expr[0])
+        return final_ds
+
+    def _fit(self, dataset):
+        return dataset
+
+
+class CombineBinaryColumnTransformer(Transformer, Estimator, HasInputCols, HasOutputCol):
+    @keyword_only
+    def __init__(self, inputCols=None, outputCol=None):
+        super(CombineBinaryColumnTransformer, self).__init__()
+        kwargs = self._input_kwargs
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCols=None, outputCol=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, dataset):
+
+        def convert_multi_columns(columns):
+            temp = []
+            for item in columns:
+                for item2 in item:
+                    temp.append(item2)
+            return temp
+
+        convert_multi_columns_udf = udf(convert_multi_columns, ArrayType(IntegerType()))
+        return dataset.withColumn(self.getOutputCol(), convert_multi_columns_udf(array(self.getInputCols())))
+
+    def _fit(self, dataset):
+        return dataset
+
+
+class CategoricalOneHotTransformer(Transformer, Estimator, HasInputCols, HasOutputCol, ColumnSuffix):
+    @keyword_only
+    def __init__(self, inputCols=None, outputCol=None, columnSuffix="_OneHotTransformer"):
+        super(CategoricalOneHotTransformer, self).__init__()
+        self._setDefault(columnSuffix="_OneHotTransformer")
+        kwargs = self._input_kwargs
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCols=None, outputCol=None, columnSuffix="_OneHotTransformer"):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, dataset):
+        indexer_stages = [
+            StringIndexer(**dict(inputCol=item, outputCol=item + "_StringIndexer" + self.getColumnSuffix())) for
+            item in
+            self.getInputCols()]
+        onehot_stages = [OneHotEncoder(
+            **dict(inputCol=item + "_StringIndexer" + self.getColumnSuffix(), outputCol=item + self.getColumnSuffix()))
+                         for
+                         item in self.getInputCols()]
+        index_pipeline = Pipeline(stages=indexer_stages)
+        onehot_pipeline = Pipeline(stages=onehot_stages)
+        dataset_with_index = index_pipeline.fit(dataset).transform(dataset)
+        dataset_with_index_and_onehot = onehot_pipeline.fit(dataset_with_index).transform(dataset_with_index)
+        return dataset_with_index_and_onehot
 
     def _fit(self, dataset):
         pass
+
+
+class TextAnalysisTransformer(Transformer, Estimator, HasInputCols, HasOutputCols):
+    @keyword_only
+    def __init__(self, inputCols=None, outputCols=None, textAnalysisParams=None):
+        super(TextAnalysisTransformer, self).__init__()
+        kwargs = self._input_kwargs
+        self._setDefault(textAnalysisParams={})
+        self.setParams(**kwargs)
+
+    textAnalysisParams = Param(Params._dummy(), "textAnalysisParams", "text analysis params",
+                               typeConverter=TypeConverters.identity)
+
+    def setTextAnalysisParams(self, value):
+        return self._set(textAnalysisParams=value)
+
+    def getTextAnalysisParams(self):
+        return self.getOrDefault(self.textAnalysisParams)
+
+    @keyword_only
+    def setParams(self, inputCols=None, outputCols=None, textAnalysisParams=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, dataset):
+        sc = JVMAPI._curr_sc()
+        archiveAutoExtract = sc._conf.get("spark.master").lower().startswith("yarn")
+        zipfiles = []
+        if not archiveAutoExtract and "dicZipName" in self.getTextAnalysisParams():
+            dicZipName = self.getTextAnalysisParams()["dicZipName"]
+            if "spark.files" in sc._conf:
+                zipfiles = [f.split("/")[-1] for f in sc._conf.get("spark.files").split(",") if
+                            f.endswith("{}.zip".format(dicZipName))]
+
+        dicDir = self.getTextAnalysisParams()["dicDir"] if "dicDir" in self.getTextAnalysisParams() else ""
+
+        def lcut(s):
+            TextAnalysis.load_dic(dicDir, archiveAutoExtract, zipfiles)
+            return jieba.lcut(s)
+
+        lcut_udf = udf(lcut, ArrayType(StringType()))
+        select_expr = [(lcut_udf(input), self.getOutputCols()[self.getInputCols().index(input)]) for input in
+                       self.getInputCols()]
+        final_ds = dataset
+        for s_expr in select_expr:
+            final_ds = final_ds.withColumn(s_expr[1], s_expr[0])
+        return final_ds
+
+    def _fit(self, dataset):
+        pass
+
+
+class TextEmbeddingSequenceTransformer(Transformer, Estimator, HasInputCols, HasOutputCols, HasEmbeddingSize,
+                                       HasSequenceLength):
+    def _fit(self, dataset):
+        return dataset
+
+    VOCAB_SIZE = 'vocab_size'
+    EMBEDDING_SIZE = 'embedding_size'
+
+    textAnalysisParams = Param(Params._dummy(), "textAnalysisParams", "text analysis params",
+                               typeConverter=TypeConverters.identity)
+
+    def setTextAnalysisParams(self, value):
+        return self._set(textAnalysisParams=value)
+
+    def getTextAnalysisParams(self):
+        return self.getOrDefault(self.textAnalysisParams)
+
+    wordEmbeddingSavePath = Param(Params._dummy(), "wordEmbeddingSavePath", "",
+                                  typeConverter=TypeConverters.toString)
+
+    def setWordEmbeddingSavePath(self, value):
+        return self._set(wordEmbeddingSavePath=value)
+
+    def getWordEmbeddingSavePath(self):
+        return self.getOrDefault(self.wordEmbeddingSavePath)
+
+    @keyword_only
+    def __init__(self, inputCols=None, outputCols=None, embeddingSize=100, sequenceLength=64,
+                 wordEmbeddingSavePath=None):
+        super(TextEmbeddingSequenceTransformer, self).__init__()
+        kwargs = self._input_kwargs
+        self._setDefault(sequenceLength=64)
+        self._setDefault(embeddingSize=100)
+        self._setDefault(wordEmbeddingSavePath=None)
+        # self._setDefault()
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCols=None, outputCols=None, embeddingSize=100, sequenceLength=64,
+                  wordEmbeddingSavePath=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def getWordEmbedding(self):
+        return self.word_embedding_with_index
+
+    def getW2vModel(self):
+        return self.w2v_model
+
+    def _transform(self, dataset):
+        sc = JVMAPI._curr_sc()
+        column_initial = self.getInputCols()[0]
+        ds = dataset.select(col(column_initial).alias("word2vec_TextEmbeddingSequenceTransformer"))
+        for column in [item for item in self.getInputCols() if item not in [column_initial]]:
+            ds = ds.union(dataset.select(col(column).alias("word2vec_TextEmbeddingSequenceTransformer")))
+
+        word2vec = Word2Vec(vectorSize=self.getEmbeddingSize(), minCount=1,
+                            inputCol="word2vec_TextEmbeddingSequenceTransformer",
+                            outputCol="person_behavior_vector")
+        self.w2v_model = word2vec.fit(ds)
+        self.word_embedding = self.w2v_model.getVectors().rdd.map(
+            lambda p: dict(word=p.word, vector=p.vector.values.tolist())).collect()
+
+        self.word_embedding_with_index = [dict(word_index=(idx + 1), word=val["word"], vector=val["vector"]) for
+                                          (idx, val)
+                                          in
+                                          enumerate(self.word_embedding)]
+        self.word_embedding_with_index.insert(0, dict(word_index=0, word="UNK",
+                                                      vector=np.zeros(self.getEmbeddingSize()).tolist()))
+
+        if self.getWordEmbeddingSavePath() is not None:
+            SparkSession.builder.getOrCreate().createDataFrame(self.word_embedding_with_index).write.mode(
+                "overwrite").format(
+                "parquet").save(self.getWordEmbeddingSavePath())
+
+        # word_embedding_bs = sc.broadcast(word_embedding)
+        word2index_bs = sc.broadcast(
+            dict([(item["word"], item["word_index"]) for item in self.word_embedding_with_index]))
+
+        # index2word_bs = sc.broadcast(dict([(item["word_index"], item["word"]) for item in word_embedding_with_index]))
+        sequence_len = self.getSequenceLength()
+
+        def sentence_sequence(s):
+            new_s = [word2index_bs.value[word] for word in s if word in word2index_bs.value]
+
+            def _pad_sequences(sequences, maxlen=sequence_len):
+                new_sequences = []
+
+                if len(sequences) <= maxlen:
+                    for i in range(maxlen - len(sequences)):
+                        new_sequences.append(0)
+                    return sequences + new_sequences
+                else:
+                    return sequences[0:maxlen]
+
+            return _pad_sequences(new_s)
+
+        sentence_sequence_udf = udf(sentence_sequence, ArrayType(IntegerType()))
+        select_expr = [(sentence_sequence_udf(input), self.getOutputCols()[self.getInputCols().index(input)]) for input
+                       in self.getInputCols()]
+        final_ds = dataset
+        for s_expr in select_expr:
+            final_ds = final_ds.withColumn(s_expr[1], s_expr[0])
+        return final_ds
 
 
 class TFTextTransformer(Transformer, Estimator, HasInputCol, HasOutputCol, HasEmbeddingSize, HasSequenceLength):
