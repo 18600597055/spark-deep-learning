@@ -25,6 +25,7 @@ import sys
 
 from kafka import KafkaConsumer
 from kafka import KafkaProducer
+from pyspark import Broadcast
 from pyspark.ml import Estimator
 from tensorflowonspark import TFCluster
 
@@ -216,7 +217,9 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
 
         # Obtain params for this estimator instance
         baseParamMap = self.extractParamMap()
-        baseParamDict = dict([(param.name, val) for param, val in baseParamMap.items() if param.name != "mapFnParam"])
+        baseParamDict = dict(
+            [(param.name, val) for param, val in baseParamMap.items() if
+             (param.name not in ["mapFnParam", "fitParam"])])
         baseParamDictBc = sc.broadcast(baseParamDict)
 
         def _local_fit(override_param_map):
