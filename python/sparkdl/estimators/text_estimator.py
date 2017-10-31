@@ -25,12 +25,10 @@ import sys
 
 from kafka import KafkaConsumer
 from kafka import KafkaProducer
-from pyspark import Broadcast
 from pyspark.ml import Estimator
 from tensorflowonspark import TFCluster
 
-from sparkdl.param import (
-    keyword_only, HasLabelCol, HasInputCol, HasOutputCol)
+from sparkdl.param import keyword_only
 from sparkdl.param.shared_params import KafkaParam, FitParam, MapFnParam, RunningMode
 import sparkdl.utils.jvmapi as JVMAPI
 
@@ -71,9 +69,6 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
      .. code-block:: python
          def map_fun(args={}, ctx=None, _read_data=None):
             import tensorflow as tf
-            EMBEDDING_SIZE = args["embedding_size"]
-            feature = args['feature']
-            label = args['label']
             params = args['params']['fitParam']
             SEQUENCE_LENGTH = 64
 
@@ -106,9 +101,7 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
      finally we can create  TextEstimator to train our model:
 
      .. code-block:: python
-            estimator = TextEstimator(inputCol="sentence_matrix",
-                                            outputCol="sentence_matrix", labelCol="preds",
-                                            kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
+            estimator = TextEstimator(kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
                                                     "group_id": "sdl_1"},
                                             fitParam=[{"epochs": 5, "batch_size": 64}, {"epochs": 5, "batch_size": 1}],
                                             mapFnParam=map_fun)

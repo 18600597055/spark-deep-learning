@@ -44,7 +44,26 @@ class CategoricalBinaryTransformer(Transformer, Estimator, HasInputCols, HasOutp
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
+    # def getColumnLabels(self):
+    #     return self.column_labels
+
     def _transform(self, dataset):
+
+        indexer_stages = [
+            StringIndexer(**dict(inputCol=item, outputCol=item + "_StringIndex_CategoricalBinaryTransformer")) for
+            item in
+            self.getInputCols()]
+
+        indexPipeLine = Pipeline(stages=indexer_stages)
+        estimator = indexPipeLine.fit(dataset)
+
+        # labels = [model.labels for model in estimator.stages]
+        # self.column_labels = {}
+        # for column, labels_array in zip(self.getInputCols(), labels):
+        #     self.column_labels[column] = labels_array
+
+        dataset_with_index = estimator.transform(dataset)
+
         def convert_int_to_binary_string(num, length=self.getEmbeddingSize()):
             wow_num = 0
             try:
@@ -56,13 +75,6 @@ class CategoricalBinaryTransformer(Transformer, Estimator, HasInputCols, HasOutp
             return [int(i) for i in ('{0:0' + str(length) + 'b}').format(wow_num)]
 
         convert_int_to_binary_string_udf = udf(convert_int_to_binary_string, ArrayType(IntegerType()))
-        indexer_stages = [
-            StringIndexer(**dict(inputCol=item, outputCol=item + "_StringIndex_CategoricalBinaryTransformer")) for
-            item in
-            self.getInputCols()]
-
-        indexPipeLine = Pipeline(stages=indexer_stages)
-        dataset_with_index = indexPipeLine.fit(dataset).transform(dataset)
 
         select_expr = [(convert_int_to_binary_string_udf(input + "_StringIndex_CategoricalBinaryTransformer"),
                         self.getOutputCols()[self.getInputCols().index(input)])
@@ -161,6 +173,7 @@ class TextAnalysisTransformer(Transformer, Estimator, HasInputCols, HasOutputCol
         return self._set(**kwargs)
 
     def _transform(self, dataset):
+
         sc = JVMAPI._curr_sc()
         archiveAutoExtract = sc._conf.get("spark.master").lower().startswith("yarn")
         zipfiles = []

@@ -19,6 +19,7 @@ import sys
 
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import StringIndexer
+from pyspark.sql.types import *
 from sklearn import svm
 from sklearn.model_selection import GridSearchCV
 
@@ -173,6 +174,29 @@ class TFTextTransformerSkLearnTest(SparkDLTestCase):
         ds = features.transform(documentDF)
         result = ds.take(1)[0]
         self.assertTrue(len(result["features"]) == 100 * 64)
+
+
+class CategoricalOnetHotTransformerTest(SparkDLTestCase):
+    def test_trainText(self):
+        documentDF = self.session.createDataFrame([
+            ("Hi I heard about Spark", "spark"),
+            ("I wish Java could use case classes", "java"),
+            ("Logistic regression models are neat", "mlib"),
+            ("Logistic regression models are neat", "spark"),
+            ("Logistic regression models are neat", "mlib"),
+            ("Logistic regression models are neat", "java"),
+            ("Logistic regression models are neat", "spark"),
+            ("Logistic regression models are neat", "java"),
+            ("Logistic regression models are neat", "mlib")
+        ], ["text", "preds"])
+        onehot = CategoricalOneHotTransformer(inputCols=["text", "preds"], outputCols=["text1", "preds1"])
+        df = onehot.transform(documentDF)
+
+        def to_list(s):
+            return s.toArray()
+
+        to_list_udf = udf(to_list, ArrayType(FloatType()))
+        df.select(s)
 
 
 class CategoricalTransformerTest(SparkDLTestCase):
