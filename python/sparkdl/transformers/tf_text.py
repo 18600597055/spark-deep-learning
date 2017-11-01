@@ -16,6 +16,8 @@ import re
 import numpy as np
 
 import jieba
+import jieba.posseg
+import jieba.analyse
 
 from pyspark.ml import Estimator, Transformer, Pipeline
 from pyspark.ml.feature import Word2Vec, Param, Params, TypeConverters, StringIndexer, OneHotEncoder
@@ -152,10 +154,11 @@ class CategoricalOneHotTransformer(Transformer, Estimator, HasInputCols, HasOutp
 
 class TextAnalysisTransformer(Transformer, Estimator, HasInputCols, HasOutputCols):
     @keyword_only
-    def __init__(self, inputCols=None, outputCols=None, textAnalysisParams=None):
+    def __init__(self, inputCols=None, outputCols=None, stopwords=None, textAnalysisParams=None):
         super(TextAnalysisTransformer, self).__init__()
         kwargs = self._input_kwargs
         self._setDefault(textAnalysisParams={})
+        self._setDefault(stopwords=[])
         self.setParams(**kwargs)
 
     textAnalysisParams = Param(Params._dummy(), "textAnalysisParams", "text analysis params",
@@ -167,8 +170,17 @@ class TextAnalysisTransformer(Transformer, Estimator, HasInputCols, HasOutputCol
     def getTextAnalysisParams(self):
         return self.getOrDefault(self.textAnalysisParams)
 
+    stopwords = Param(Params._dummy(), "stopwords", "stopwords",
+                      typeConverter=TypeConverters.toList)
+
+    def setStopwords(self, value):
+        return self._set(stopwords=value)
+
+    def getStopwords(self):
+        return self.getOrDefault(self.stopwords)
+
     @keyword_only
-    def setParams(self, inputCols=None, outputCols=None, textAnalysisParams=None):
+    def setParams(self, inputCols=None, outputCols=None, stopwords=None, textAnalysisParams=None):
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
@@ -184,10 +196,19 @@ class TextAnalysisTransformer(Transformer, Estimator, HasInputCols, HasOutputCol
                             f.endswith("{}.zip".format(dicZipName))]
 
         dicDir = self.getTextAnalysisParams()["dicDir"] if "dicDir" in self.getTextAnalysisParams() else ""
+        rank = self.getTextAnalysisParams()["extract_tags"] if "extract_tags" in self.getTextAnalysisParams() else {}
 
         def lcut(s):
             TextAnalysis.load_dic(dicDir, archiveAutoExtract, zipfiles)
-            return jieba.lcut(s)
+            words = []
+            if len(rank) > 0:
+                if "type" not in rank or rank["type"] == "textrank":
+                    words = jieba.analyse.textrank(s, topK=rank["topK"], withWeight=False)
+                if "type" in rank and rank["type"] == "tfidf":
+                    words = jieba.analyse.tfidf(s)
+            else:
+                words = jieba.lcut(s)
+            return [word for word in words if word.lower() not in self.getStopwords()]
 
         lcut_udf = udf(lcut, ArrayType(StringType()))
         select_expr = [(lcut_udf(input), self.getOutputCols()[self.getInputCols().index(input)]) for input in
