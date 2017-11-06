@@ -18,13 +18,14 @@ import threading
 import sys
 
 from pyspark.ml import Pipeline
-from pyspark.ml.feature import StringIndexer
+from pyspark.ml.feature import StringIndexer, Tokenizer
 from pyspark.sql.types import *
 from sklearn import svm
 from sklearn.model_selection import GridSearchCV
 
+from sparkdl.transformers.easy_feature import EasyFeature
 from sparkdl.transformers.tf_text import CategoricalBinaryTransformer, CategoricalOneHotTransformer, \
-    TextAnalysisTransformer, TextEmbeddingSequenceTransformer, CombineBinaryColumnTransformer
+    TextAnalysisTransformer, TextEmbeddingSequenceTransformer, CombineBinaryColumnTransformer, TextTFDFTransformer
 from sparkdl.estimators.text_estimator import TextEstimator, KafkaMockServer
 from sparkdl.transformers.tf_text import TFTextTransformer
 from ..tests import SparkDLTestCase
@@ -125,6 +126,30 @@ def map_fun(args={}, ctx=None, _read_data=None):
     sess.close()
 
 
+class EasyFeatureTest(SparkDLTestCase):
+    def test_trainText(self):
+        input_col = "text"
+        output_col = "sentence_matrix"
+
+        documentDF = self.session.createDataFrame([
+            ("Hi I heard about Spark", "Hi I heard about Spark", 2.0, 3.0, 1),
+            ("I wish Java could use case classes", "I wish Java could use case classes", 3.0, 4.0, 0),
+            ("Logistic regression models are neat", "Logistic regression models are neat", 4.0, 5.0, 2)
+        ], ["sentence", "sentence2", "f1", "f2", "preds"])
+        tokenizer = Tokenizer(inputCol="sentence", outputCol="words")
+        wordsData = tokenizer.transform(documentDF)
+        tokenizer = Tokenizer(inputCol="sentence2", outputCol="words2")
+        wordsData2 = tokenizer.transform(wordsData)
+        # transform text column to sentence_matrix column which contains 2-D array.
+        # transformer = TextTFDFTransformer(inputCols=["words", "words2"], outputCols=["text_tfidf", "text_tfidf2"],
+        #                                   numFeatures=10)
+        # df = transformer.transform(wordsData2)
+        # df.show()
+        ef = EasyFeature(textFields=["sentence", "sentence2"], numFeatures=10, outputCol="features")
+        df = ef.transform(documentDF)
+        df.show()
+
+
 class TFTextEstimatorTest(SparkDLTestCase):
     def test_trainText(self):
         input_col = "text"
@@ -190,7 +215,8 @@ class ExampleTransformerTest(SparkDLTestCase):
             ("Logistic regression models are neat", "mlib")
         ], ["text", "preds"])
         tat = TextAnalysisTransformer(
-            inputCols=["text", "preds"], outputCols=["text1", "preds2"], textAnalysisParams={"extract_tags": {"type": "tfidf"}})
+            inputCols=["text", "preds"], outputCols=["text1", "preds2"],
+            textAnalysisParams={"extract_tags": {"type": "tfidf"}})
         ds = tat.transform(documentDF)
         ds.show()
 

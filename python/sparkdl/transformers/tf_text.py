@@ -20,7 +20,9 @@ import jieba.posseg
 import jieba.analyse
 
 from pyspark.ml import Estimator, Transformer, Pipeline
-from pyspark.ml.feature import Word2Vec, Param, Params, TypeConverters, StringIndexer, OneHotEncoder
+from pyspark.ml.feature import Word2Vec, Param, Params, TypeConverters, StringIndexer, OneHotEncoder, HashingTF, IDF
+from pyspark.ml.util import JavaMLReadable, JavaMLWritable
+from pyspark.ml.wrapper import JavaModel
 from pyspark.sql import SparkSession
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
@@ -220,6 +222,61 @@ class TextAnalysisTransformer(Transformer, Estimator, HasInputCols, HasOutputCol
 
     def _fit(self, dataset):
         pass
+
+
+class TextTFDFTransformer(Transformer, HasInputCols, HasOutputCols):
+    @keyword_only
+    def __init__(self, inputCols=None, outputCols=None, numFeatures=None):
+        super(TextTFDFTransformer, self).__init__()
+        kwargs = self._input_kwargs
+        self._setDefault(numFeatures=10000)
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCols=None, outputCols=None, numFeatures=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    numFeatures = Param(Params._dummy(), "numFeatures", "numFeatures",
+                        typeConverter=TypeConverters.toInt)
+
+    def setNumFeatures(self, value):
+        return self._set(numFeatures=value)
+
+    def getNumFeatures(self):
+        return self.getOrDefault(self.numFeatures)
+
+    def idfModel(self):
+        return self.idfModel
+
+    def _transform(self, dataset):
+        column_initial = self.getInputCols()[0]
+        ds = dataset.select(col(column_initial).alias("tfidf_TextTFDFTransformer_inputCol"))
+        for column in [item for item in self.getInputCols() if item not in [column_initial]]:
+            ds = ds.union(dataset.select(col(column).alias("tfidf_TextTFDFTransformer_inputCol")))
+
+        hashingTF = HashingTF(inputCol="tfidf_TextTFDFTransformer_inputCol",
+                              outputCol="tfidf_TextTFDFTransformer_outputCol",
+                              numFeatures=self.getNumFeatures())
+
+        featurizedData = hashingTF.transform(ds)
+        # alternatively, CountVectorizer can also be used to get term frequency vectors
+        idf = IDF(inputCol="tfidf_TextTFDFTransformer_outputCol", outputCol="tfidf_TextTFDFTransformer_idf_outputCol")
+        self.idfModel = idf.fit(featurizedData)
+
+        hashingTFs = [HashingTF(inputCol=input,
+                                outputCol=input + "_TextTFDFTransformer",
+                                numFeatures=self.getNumFeatures()) for input in self.getInputCols()]
+
+        pipline = Pipeline(stages=hashingTFs)
+        featurizedData2 = pipline.fit(dataset).transform(dataset)
+        featurizedData2.show()
+        for input in self.getInputCols():
+            self.idfModel._call_java("setInputCol", input + "_TextTFDFTransformer")
+            self.idfModel._call_java("setOutputCol", self.getOutputCols()[
+                self.getInputCols().index(input)])
+            featurizedData2 = self.idfModel.transform(featurizedData2)
+        return featurizedData2
 
 
 class TextEmbeddingSequenceTransformer(Transformer, Estimator, HasInputCols, HasOutputCols, HasEmbeddingSize,
