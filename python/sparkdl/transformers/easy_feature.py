@@ -150,12 +150,16 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
         suffix = "_EasyFeature"
 
         if len(self.getDiscretizerFields()) > 0:
+            tmp_fields = [k for (k, v) in self.getDiscretizerFields().items()]
+            imputer = Imputer(inputCols=tmp_fields, outputCols=[(item + "_tmp") for item in tmp_fields])
+            df = imputer.fit(dataset).transform(dataset)
             discretizerPipeline = Pipeline(
-                stages=[QuantileDiscretizer(numBuckets=v, inputCol=k, outputCol=(k + suffix)) for (k, v) in
+                stages=[QuantileDiscretizer(numBuckets=v, inputCol=k + "_tmp", outputCol=(k + suffix)) for (k, v) in
                         self.getDiscretizerFields().items()])
-            discretizerModels = discretizerPipeline.fit(dataset)
-            df = discretizerModels.transform(dataset)
+            discretizerModels = discretizerPipeline.fit(df)
+            df = discretizerModels.transform(df)
             self.discretizerFeatures = [(item.getInputCol(), item.getSplits()) for item in discretizerModels.stages]
+            df.drop(*[(item + "_tmp") for item in tmp_fields])
 
         # float columns will do missing value checking
         imputer = Imputer(inputCols=float_columns, outputCols=[(item + suffix) for item in float_columns])

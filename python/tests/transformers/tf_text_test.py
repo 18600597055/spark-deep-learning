@@ -128,8 +128,6 @@ def map_fun(args={}, ctx=None, _read_data=None):
 
 class EasyFeatureTest(SparkDLTestCase):
     def test_trainText(self):
-        input_col = "text"
-        output_col = "sentence_matrix"
 
         documentDF = self.session.createDataFrame([
             ("Hi I heard about Spark", "Hi I heard about Spark", 2.0, 3.0, 1, 2),
@@ -148,7 +146,7 @@ class EasyFeatureTest(SparkDLTestCase):
         ef = EasyFeature(textFields=["sentence", "sentence2"], numFeatures=10, outputCol="features", wordMode="tfidf",
                          discretizerFields={"f1": 2})
         df = ef.transform(documentDF)
-        df.select("sentence_text_EasyFeature").show(truncate=False)
+        df.show(truncate=False)
 
 
 class TFTextEstimatorTest(SparkDLTestCase):
