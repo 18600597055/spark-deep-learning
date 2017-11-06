@@ -122,6 +122,58 @@ class CombineBinaryColumnTransformer(Transformer, Estimator, HasInputCols, HasOu
         return dataset
 
 
+class ElementwiseAdd(Transformer, Estimator, HasInputCols, HasOutputCol):
+    @keyword_only
+    def __init__(self, inputCols=None, outputCol=None):
+        super(ElementwiseAdd, self).__init__()
+        kwargs = self._input_kwargs
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCols=None, outputCol=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, dataset):
+        def avg_vectors(word_seq):
+            result = np.zeros(len(word_seq[0]))
+            for item in word_seq:
+                result = result + np.array(item)
+            return (result / len(word_seq)).tolist()
+
+        avg_vectors_udf = udf(avg_vectors, ArrayType(DoubleType()))
+        return dataset.withColumn(self.getOutputCol(), avg_vectors_udf(array(self.getInputCols())))
+
+    def _fit(self, dataset):
+        return dataset
+
+
+class ElementwiseMulti(Transformer, Estimator, HasInputCols, HasOutputCol):
+    @keyword_only
+    def __init__(self, inputCols=None, outputCol=None):
+        super(ElementwiseAdd, self).__init__()
+        kwargs = self._input_kwargs
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCols=None, outputCol=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, dataset):
+        def multi_vectors(word_seq):
+            result = np.ones(len(word_seq[0]))
+            for item in word_seq:
+                result = result * np.array(item)
+            return result.tolist()
+
+        multi_vectors_udf = udf(multi_vectors, ArrayType(DoubleType()))
+        return dataset.withColumn(self.getOutputCol(), multi_vectors_udf(array(self.getInputCols())))
+
+    def _fit(self, dataset):
+        return dataset
+
+
 class CategoricalOneHotTransformer(Transformer, Estimator, HasInputCols, HasOutputCol, ColumnSuffix):
     @keyword_only
     def __init__(self, inputCols=None, outputCol=None, columnSuffix="_OneHotTransformer"):
@@ -270,7 +322,6 @@ class TextTFDFTransformer(Transformer, HasInputCols, HasOutputCols):
 
         pipline = Pipeline(stages=hashingTFs)
         featurizedData2 = pipline.fit(dataset).transform(dataset)
-        featurizedData2.show()
         for input in self.getInputCols():
             self.idfModel._call_java("setInputCol", input + "_TextTFDFTransformer")
             self.idfModel._call_java("setOutputCol", self.getOutputCols()[

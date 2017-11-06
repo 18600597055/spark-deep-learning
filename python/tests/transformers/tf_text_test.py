@@ -132,10 +132,10 @@ class EasyFeatureTest(SparkDLTestCase):
         output_col = "sentence_matrix"
 
         documentDF = self.session.createDataFrame([
-            ("Hi I heard about Spark", "Hi I heard about Spark", 2.0, 3.0, 1),
-            ("I wish Java could use case classes", "I wish Java could use case classes", 3.0, 4.0, 0),
-            ("Logistic regression models are neat", "Logistic regression models are neat", 4.0, 5.0, 2)
-        ], ["sentence", "sentence2", "f1", "f2", "preds"])
+            ("Hi I heard about Spark", "Hi I heard about Spark", 2.0, 3.0, 1, 2),
+            ("I wish Java could use case classes", "I wish Java could use case classes", 3.0, 4.0, 0, 4),
+            ("Logistic regression models are neat", "Logistic regression models are neat", 4.0, 5.0, 2, 5)
+        ], ["sentence", "sentence2", "f1", "f2", "preds", "i1"])
         tokenizer = Tokenizer(inputCol="sentence", outputCol="words")
         wordsData = tokenizer.transform(documentDF)
         tokenizer = Tokenizer(inputCol="sentence2", outputCol="words2")
@@ -145,9 +145,10 @@ class EasyFeatureTest(SparkDLTestCase):
         #                                   numFeatures=10)
         # df = transformer.transform(wordsData2)
         # df.show()
-        ef = EasyFeature(textFields=["sentence", "sentence2"], numFeatures=10, outputCol="features")
+        ef = EasyFeature(textFields=["sentence", "sentence2"], numFeatures=10, outputCol="features", wordMode="tfidf",
+                         discretizerFields={"f1": 2})
         df = ef.transform(documentDF)
-        df.show()
+        df.select("sentence_text_EasyFeature").show(truncate=False)
 
 
 class TFTextEstimatorTest(SparkDLTestCase):
