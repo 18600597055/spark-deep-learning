@@ -1,7 +1,7 @@
 from pyspark.ml import Estimator, Transformer
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import Imputer, Param, Params, TypeConverters, VectorAssembler, VectorIndexer, Tokenizer, \
-    HashingTF, OneHotEncoder, QuantileDiscretizer
+    HashingTF, OneHotEncoder, QuantileDiscretizer, Normalizer
 from pyspark.ml.linalg import VectorUDT
 from pyspark.sql.types import *
 
@@ -16,7 +16,7 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
     def __init__(self, textFields=None, wordMode=None, discretizerFields=None, numFeatures=10000, maxCategories=20,
                  embeddingSize=100,
                  sequenceLength=64,
-                 wordEmbeddingSavePath=None, outputCol=None):
+                 wordEmbeddingSavePath=None, outputCol=None, outputColPNorm=None):
         super(EasyFeature, self).__init__()
         kwargs = self._input_kwargs
         self.ignoredColumns = []
@@ -29,18 +29,22 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
         self._setDefault(wordMode="embedding")
         self._setDefault(numFeatures=10000)
         self._setDefault(discretizerFields={})
+        self._setDefault(outputColPNorm=None)
         self.setParams(**kwargs)
 
     @keyword_only
     def setParams(self, textFields=None, wordMode=None, discretizerFields=None,
                   numFeatures=10000, maxCategories=20, embeddingSize=100,
                   sequenceLength=64,
-                  wordEmbeddingSavePath=None, outputCol=None):
+                  wordEmbeddingSavePath=None, outputCol=None, outputColPNorm=None):
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
     textFields = Param(Params._dummy(), "textFields", "textFields",
                        typeConverter=TypeConverters.identity)
+
+    outputColPNorm = Param(Params._dummy(), "outputColPNorm", "outputColPNorm",
+                           typeConverter=TypeConverters.toInt)
 
     wordMode = Param(Params._dummy(), "wordMode",
                      "wordMode: embedding or tfidf", typeConverter=TypeConverters.toString)
@@ -61,6 +65,12 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
                           "Threshold for the number of values a categorical feature can take " +
                           "(>= 2). If a feature is found to have > maxCategories values, then " +
                           "it is declared continuous.", typeConverter=TypeConverters.toInt)
+
+    def setOutputColPNorm(self, value):
+        return self._set(outputColPNorm=value)
+
+    def getOutputColPNorm(self):
+        return self.getOrDefault(self.outputColPNorm)
 
     def setDiscretizerFields(self, value):
         return self._set(discretizerFields=value)
@@ -235,8 +245,13 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
                 should_assemble_columns = [item for item in should_assemble_columns if
                                            not item.endswith("_text" + suffix)]
             print("should_assemble_columns: {}".format(should_assemble_columns))
+
+            tmp_output_col = self.getOutputCol() + "_original" if self.getOutputColPNorm() is not None else self.getOutputCol()
             assembler = VectorAssembler(inputCols=should_assemble_columns,
-                                        outputCol=self.getOutputCol())
+                                        outputCol=tmp_output_col)
             df = assembler.transform(df)
+            if self.getOutputColPNorm() is not None:
+                df = Normalizer(inputCol=tmp_output_col, outputCol=self.getOutputCol(),
+                                p=self.getOutputColPNorm()).transform(df)
 
         return df
