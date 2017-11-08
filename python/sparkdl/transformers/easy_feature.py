@@ -40,10 +40,11 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    textFields = Param(Params._dummy(), "textFields", "textFields",
-                       typeConverter=TypeConverters.identity)
+    textFields = Param(Params._dummy(), "textFields", "Specify which fields should be segmented",
+                       typeConverter=TypeConverters.toList)
 
-    outputColPNorm = Param(Params._dummy(), "outputColPNorm", "outputColPNorm",
+    outputColPNorm = Param(Params._dummy(), "outputColPNorm" +
+                           "Specifies the p-norm used for normalization which is performed in outputCol",
                            typeConverter=TypeConverters.toInt)
 
     wordMode = Param(Params._dummy(), "wordMode",
@@ -58,7 +59,7 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
                                typeConverter=TypeConverters.identity)
     wordEmbeddingSavePath = Param(Params._dummy(), "wordEmbeddingSavePath", "",
                                   typeConverter=TypeConverters.toString)
-    numFeatures = Param(Params._dummy(), "numFeatures", "numFeatures",
+    numFeatures = Param(Params._dummy(), "numFeatures", "Specify show many features when use tf/idf algorithm",
                         typeConverter=TypeConverters.toInt)
 
     maxCategories = Param(Params._dummy(), "maxCategories",
