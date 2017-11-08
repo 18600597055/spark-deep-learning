@@ -201,7 +201,7 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
         if self.getWordMode() == "tfidf":
             ttfdft = TextTFDFTransformer(inputCols=analysis_fields,
                                          outputCols=[(item + suffix) for item in analysis_fields],
-                                         numFeatures=10000)
+                                         numFeatures=self.getNumFeatures())
             df = ttfdft.transform(df)
 
         # word embedding analysised text fields
