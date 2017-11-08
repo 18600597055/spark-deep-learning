@@ -43,7 +43,7 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
     textFields = Param(Params._dummy(), "textFields", "Specify which fields should be segmented",
                        typeConverter=TypeConverters.toList)
 
-    outputColPNorm = Param(Params._dummy(), "outputColPNorm" +
+    outputColPNorm = Param(Params._dummy(), "outputColPNorm",
                            "Specifies the p-norm used for normalization which is performed in outputCol",
                            typeConverter=TypeConverters.toInt)
 
