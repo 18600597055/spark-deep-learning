@@ -8,12 +8,14 @@ from pyspark.sql.types import *
 from sparkdl.param.shared_params import HasEmbeddingSize, HasSequenceLength, HasOutputCol
 from sparkdl.param import keyword_only
 from sparkdl.transformers.tf_text import CategoricalBinaryTransformer, TextAnalysisTransformer, \
-    TextEmbeddingSequenceTransformer, TextTFDFTransformer, CategoricalOneHotTransformer
+    TextEmbeddingSequenceTransformer, TextTFDFTransformer
 
 
 class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol):
     @keyword_only
-    def __init__(self, textFields=None, wordMode=None, discretizerFields=None, numFeatures=10000, maxCategories=20,
+    def __init__(self, textFields=None, excludeFields=None, stopwords=[], wordMode=None, discretizerFields=None,
+                 numFeatures=10000,
+                 maxCategories=20,
                  embeddingSize=100,
                  sequenceLength=64,
                  wordEmbeddingSavePath=None, outputCol=None, outputColPNorm=None):
@@ -30,10 +32,12 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
         self._setDefault(numFeatures=10000)
         self._setDefault(discretizerFields={})
         self._setDefault(outputColPNorm=None)
+        self._setDefault(excludeFields=[])
+        self._setDefault(stopwords=[])
         self.setParams(**kwargs)
 
     @keyword_only
-    def setParams(self, textFields=None, wordMode=None, discretizerFields=None,
+    def setParams(self, textFields=None, excludeFields=None, stopwords=[], wordMode=None, discretizerFields=None,
                   numFeatures=10000, maxCategories=20, embeddingSize=100,
                   sequenceLength=64,
                   wordEmbeddingSavePath=None, outputCol=None, outputColPNorm=None):
@@ -42,6 +46,10 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
 
     textFields = Param(Params._dummy(), "textFields", "Specify which fields should be segmented",
                        typeConverter=TypeConverters.toList)
+    excludeFields = Param(Params._dummy(), "excludeFields", "Specify which fields should be excluded",
+                          typeConverter=TypeConverters.toList)
+    stopwords = Param(Params._dummy(), "stopwords", "stopwords",
+                      typeConverter=TypeConverters.toList)
 
     outputColPNorm = Param(Params._dummy(), "outputColPNorm",
                            "Specifies the p-norm used for normalization which is performed in outputCol",
@@ -66,6 +74,18 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
                           "Threshold for the number of values a categorical feature can take " +
                           "(>= 2). If a feature is found to have > maxCategories values, then " +
                           "it is declared continuous.", typeConverter=TypeConverters.toInt)
+
+    def setStopwords(self, value):
+        return self._set(stopwords=value)
+
+    def getStopwords(self):
+        return self.getOrDefault(self.stopwords)
+
+    def setExcludeFields(self, value):
+        return self._set(excludeFields=value)
+
+    def getExcludeFields(self):
+        return self.getOrDefault(self.excludeFields)
 
     def setOutputColPNorm(self, value):
         return self._set(outputColPNorm=value)
@@ -142,13 +162,13 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
     def _transform(self, dataset):
         st = dataset.schema
 
-        exclude_fields = [k for (k, v) in self.getDiscretizerFields().items()]
+        temp_exclude_fields = [k for (k, v) in self.getDiscretizerFields().items()] + self.getExcludeFields()
 
         def columns(its):
             cols = []
             for sf in st.fields:
                 for it in its:
-                    if sf.name not in exclude_fields and isinstance(sf.dataType, it):
+                    if sf.name not in temp_exclude_fields and isinstance(sf.dataType, it):
                         cols.append(sf.name)
             return cols
 
@@ -171,10 +191,13 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
             df = discretizerModels.transform(df)
             self.discretizerFeatures = [(item.getInputCol(), item.getSplits()) for item in discretizerModels.stages]
             df.drop(*[(item + "_tmp") for item in tmp_fields])
+        else:
+            df = dataset
 
         # float columns will do missing value checking
-        imputer = Imputer(inputCols=float_columns, outputCols=[(item + suffix) for item in float_columns])
-        df = imputer.fit(dataset).transform(df)
+        if len(float_columns) > 0:
+            imputer = Imputer(inputCols=float_columns, outputCols=[(item + suffix) for item in float_columns])
+            df = imputer.fit(dataset).transform(df)
 
         # find text fields and category fields
         def check_categorical_or_text_string():
@@ -187,56 +210,60 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
         string_columns = [item for item in string_or_text_columns if item not in text_fields]
 
         # all string fields except text fields will be treated as category feature
-        cbt = CategoricalBinaryTransformer(inputCols=string_columns,
-                                           outputCols=[(item + suffix) for item in string_columns],
-                                           embeddingSize=12)
-        df = cbt.transform(df)
+        if len(string_columns) > 0:
+            cbt = CategoricalBinaryTransformer(inputCols=string_columns,
+                                               outputCols=[(item + suffix) for item in string_columns],
+                                               embeddingSize=12)
+            df = cbt.transform(df)
 
-        # analysis text fields
-        analysis_fields = [(item + "_text") for item in text_fields]
-        tat = TextAnalysisTransformer(inputCols=text_fields, outputCols=analysis_fields)
-        df = tat.transform(df)
+        if len(text_fields) > 0:
+            # analysis text fields
+            analysis_fields = [(item + "_text") for item in text_fields]
+            tat = TextAnalysisTransformer(inputCols=text_fields, outputCols=analysis_fields,
+                                          stopwords=self.getStopwords())
+            df = tat.transform(df)
 
-        # text fields will be processed as tfidf / embedding vector
-        if self.getWordMode() == "tfidf":
-            ttfdft = TextTFDFTransformer(inputCols=analysis_fields,
-                                         outputCols=[(item + suffix) for item in analysis_fields],
-                                         numFeatures=self.getNumFeatures())
-            df = ttfdft.transform(df)
+            # text fields will be processed as tfidf / embedding vector
+            if self.getWordMode() == "tfidf":
+                ttfdft = TextTFDFTransformer(inputCols=analysis_fields,
+                                             outputCols=[(item + suffix) for item in analysis_fields],
+                                             numFeatures=self.getNumFeatures())
+                df = ttfdft.transform(df)
 
-        # word embedding analysised text fields
-        if self.getWordMode() == "embedding":
-            test = TextEmbeddingSequenceTransformer(inputCols=analysis_fields,
-                                                    outputCols=[(item + suffix) for item in analysis_fields],
-                                                    embeddingSize=self.getEmbeddingSize(),
-                                                    sequenceLength=self.getSequenceLength()
-                                                    )
-            df = test.transform(df)
-            self.word_embedding_with_index = test.getWordEmbedding()
-            self.w2v_model = test.w2v_model
-            self.wordEmbeddingSavePath = test.getWordEmbeddingSavePath()
+            # word embedding analysised text fields
+            if self.getWordMode() == "embedding":
+                test = TextEmbeddingSequenceTransformer(inputCols=analysis_fields,
+                                                        outputCols=[(item + suffix) for item in analysis_fields],
+                                                        embeddingSize=self.getEmbeddingSize(),
+                                                        sequenceLength=self.getSequenceLength()
+                                                        )
+                df = test.transform(df)
+                self.word_embedding_with_index = test.getWordEmbedding()
+                self.w2v_model = test.w2v_model
+                self.wordEmbeddingSavePath = test.getWordEmbeddingSavePath()
 
-        # find who is category column in int columns
-        assembler = VectorAssembler(inputCols=int_columns,
-                                    outputCol="easy_feature_int_vector")
-        df = assembler.transform(df)
-        indexer = VectorIndexer(inputCol="easy_feature_int_vector", outputCol="int_vector_EasyFeature",
-                                maxCategories=self.getMaxCategories())
-        indexerModel = indexer.fit(df)
-        df = df.drop("easy_feature_int_vector", "int_vector_EasyFeature")
-        self.categoricalFeatures = indexerModel.categoryMaps
-        tmp_int_category = [int_columns[k] for (k, v) in self.categoricalFeatures.items()]
-        tmp_int_non_category = [k for k in int_columns if k not in tmp_int_category]
+        if len(int_columns) > 0:
+            # find who is category column in int columns
+            assembler = VectorAssembler(inputCols=int_columns,
+                                        outputCol="easy_feature_int_vector")
+            df = assembler.transform(df)
+            indexer = VectorIndexer(inputCol="easy_feature_int_vector", outputCol="int_vector_EasyFeature",
+                                    maxCategories=self.getMaxCategories())
+            indexerModel = indexer.fit(df)
+            df = df.drop("easy_feature_int_vector", "int_vector_EasyFeature")
+            self.categoricalFeatures = indexerModel.categoryMaps
+            tmp_int_category = [int_columns[k] for (k, v) in self.categoricalFeatures.items()]
+            tmp_int_non_category = [k for k in int_columns if k not in tmp_int_category]
 
-        # assemble non-category columns
-        assembler = VectorAssembler(inputCols=tmp_int_non_category,
-                                    outputCol="int_vector_EasyFeature")
-        df = assembler.transform(df)
+            # assemble non-category columns
+            assembler = VectorAssembler(inputCols=tmp_int_non_category,
+                                        outputCol="int_vector_EasyFeature")
+            df = assembler.transform(df)
 
-        # onehot category int columns
-        onehotPipeline = Pipeline(
-            stages=[OneHotEncoder(inputCol=item, outputCol=(item + suffix)) for item in tmp_int_category])
-        df = onehotPipeline.fit(df).transform(df)
+            # onehot category int columns
+            onehotPipeline = Pipeline(
+                stages=[OneHotEncoder(inputCol=item, outputCol=(item + suffix)) for item in tmp_int_category])
+            df = onehotPipeline.fit(df).transform(df)
 
         # if outputCol is specified then assemble all columns together
         if self.getOutputCol() is not None:

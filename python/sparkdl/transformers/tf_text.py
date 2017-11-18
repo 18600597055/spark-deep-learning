@@ -174,26 +174,26 @@ class ElementwiseMulti(Transformer, Estimator, HasInputCols, HasOutputCol):
         return dataset
 
 
-class CategoricalOneHotTransformer(Transformer, Estimator, HasInputCols, HasOutputCol, ColumnSuffix):
+class CategoricalOneHotTransformer(Transformer, Estimator, HasInputCols, HasOutputCols):
     @keyword_only
-    def __init__(self, inputCols=None, outputCol=None, columnSuffix="_OneHotTransformer"):
+    def __init__(self, inputCols=None, outputCols=None):
         super(CategoricalOneHotTransformer, self).__init__()
-        self._setDefault(columnSuffix="_OneHotTransformer")
         kwargs = self._input_kwargs
         self.setParams(**kwargs)
 
     @keyword_only
-    def setParams(self, inputCols=None, outputCol=None, columnSuffix="_OneHotTransformer"):
+    def setParams(self, inputCols=None, outputCols=None):
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
     def _transform(self, dataset):
         indexer_stages = [
-            StringIndexer(**dict(inputCol=item, outputCol=item + "_StringIndexer" + self.getColumnSuffix())) for
+            StringIndexer(**dict(inputCol=item, outputCol=item + "_StringIndexer")) for
             item in
             self.getInputCols()]
         onehot_stages = [OneHotEncoder(
-            **dict(inputCol=item + "_StringIndexer" + self.getColumnSuffix(), outputCol=item + self.getColumnSuffix()))
+            **dict(inputCol=item + "_StringIndexer",
+                   outputCol=self.getOutputCols()[self.getInputCols().index(item)]))
                          for
                          item in self.getInputCols()]
         index_pipeline = Pipeline(stages=indexer_stages)
@@ -251,6 +251,7 @@ class TextAnalysisTransformer(Transformer, Estimator, HasInputCols, HasOutputCol
 
         dicDir = self.getTextAnalysisParams()["dicDir"] if "dicDir" in self.getTextAnalysisParams() else ""
         rank = self.getTextAnalysisParams()["extract_tags"] if "extract_tags" in self.getTextAnalysisParams() else {}
+        stopwords_br = sc.broadcast(self.getStopwords())
 
         def lcut(s):
             TextAnalysis.load_dic(dicDir, archiveAutoExtract, zipfiles)
@@ -262,7 +263,7 @@ class TextAnalysisTransformer(Transformer, Estimator, HasInputCols, HasOutputCol
                     words = jieba.analyse.tfidf(s)
             else:
                 words = jieba.lcut(s)
-            return [word for word in words if word.lower() not in self.getStopwords()]
+            return [word for word in words if word.lower() not in stopwords_br.value]
 
         lcut_udf = udf(lcut, ArrayType(StringType()))
         select_expr = [(lcut_udf(input), self.getOutputCols()[self.getInputCols().index(input)]) for input in

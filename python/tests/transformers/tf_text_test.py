@@ -147,6 +147,14 @@ class EasyFeatureTest(SparkDLTestCase):
         df = ef.transform(documentDF)
         df.select("features").show(truncate=False)
 
+        ef = EasyFeature(textFields=["sentence"], excludeFields=["sentence2", "f1", "f2", "preds", "i1"],
+                         outputCol="features")
+        df = ef.transform(documentDF)
+        df.show(truncate=False)
+
+        onehot = CategoricalOneHotTransformer(inputCols=["preds"], outputCols=["pc"])
+        onehot.transform(df).show()
+
 
 class TFTextEstimatorTest(SparkDLTestCase):
     def test_trainText(self):
