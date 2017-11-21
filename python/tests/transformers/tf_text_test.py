@@ -149,11 +149,29 @@ class EasyFeatureTest(SparkDLTestCase):
 
         ef = EasyFeature(textFields=["sentence"], excludeFields=["sentence2", "f1", "f2", "preds", "i1"],
                          outputCol="features")
+
         df = ef.transform(documentDF)
         df.show(truncate=False)
 
         onehot = CategoricalOneHotTransformer(inputCols=["preds"], outputCols=["pc"])
         onehot.transform(df).show()
+
+
+class OnlyForTest(SparkDLTestCase):
+    def test(self):
+        documentDF = self.session.createDataFrame([
+            ("Hi I heard about Spark", "Hi I heard about Spark", 2.0, 3.0, 1, 2),
+            ("I wish Java could use case classes", "I wish Java could use case classes", 3.0, 4.0, 0, 4),
+            ("Logistic regression models are neat", "Logistic regression models are neat", 4.0, 5.0, 2, 5)
+        ], ["sentence", "sentence2", "f1", "f2", "preds", "i1"])
+
+        ef = EasyFeature(textFields=["sentence"], excludeFields=["sentence2", "f1", "f2", "preds", "i1"],
+                         outputCol="features")
+        df = ef.transform(documentDF)
+        word_embedding = [item["word"] for item in ef.getWordEmbedding()]
+        seqs = [item["sentence_text_EasyFeature"] for item in df.collect()]
+        words = [word_embedding[item] for item in seqs[0]]
+        print(words)
 
 
 class TFTextEstimatorTest(SparkDLTestCase):

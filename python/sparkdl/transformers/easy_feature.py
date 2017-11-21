@@ -4,6 +4,7 @@ from pyspark.ml.feature import Imputer, Param, Params, TypeConverters, VectorAss
     HashingTF, OneHotEncoder, QuantileDiscretizer, Normalizer
 from pyspark.ml.linalg import VectorUDT
 from pyspark.sql.types import *
+import pyspark.sql.functions as fn
 
 from sparkdl.param.shared_params import HasEmbeddingSize, HasSequenceLength, HasOutputCol
 from sparkdl.param import keyword_only
@@ -56,18 +57,26 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
                            typeConverter=TypeConverters.toInt)
 
     wordMode = Param(Params._dummy(), "wordMode",
-                     "wordMode: embedding or tfidf", typeConverter=TypeConverters.toString)
+                     "wordMode: embedding or tfidf. default: embedding. when embedding is selected , " +
+                     "the text field will be convert to int sequence and " +
+                     "you should also specify embeddingSize and sequenceLength params. " +
+                     "if tfid is selected , the text fields will be convert to tf/idf sequence which length is specified by numFeatures",
+                     typeConverter=TypeConverters.toString)
 
     discretizerFields = Param(Params._dummy(), "discretizerFields",
-                              "fields which are continuous will be convert to categorical . " +
-                              "{\"field1\":3,\"field2\":2,} ",
+                              "fields which are continuous will be convert to categorical . here is the example:" +
+                              "{\"field1\":3,\"field2\":2,} . " +
+                              "the keys are field  name and the value means the coresponding field have how many buckets ",
                               typeConverter=TypeConverters.identity)
 
     textAnalysisParams = Param(Params._dummy(), "textAnalysisParams", "text analysis params",
                                typeConverter=TypeConverters.identity)
+
     wordEmbeddingSavePath = Param(Params._dummy(), "wordEmbeddingSavePath", "",
                                   typeConverter=TypeConverters.toString)
-    numFeatures = Param(Params._dummy(), "numFeatures", "Specify show many features when use tf/idf algorithm",
+
+    numFeatures = Param(Params._dummy(), "numFeatures",
+                        "Specify the size of vector  when use tf/idf algorithm in text fields.",
                         typeConverter=TypeConverters.toInt)
 
     maxCategories = Param(Params._dummy(), "maxCategories",
@@ -158,6 +167,24 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
 
     def getIgnoredColumns(self):
         return self.ignoredColumns
+
+    def getConvertMapping(self, df, field):
+        """
+        :param df:
+        :param field: original field
+        :return:  mapping from original field to new field
+
+        EasyFeature will do some feature engineer jobs like:
+         1. convert String to Int
+         2. convert word to word embbedding
+         3. more....
+         We should get the mapping when we are in predicting step.
+        """
+        original_field = field
+        convert_field = original_field + "_EasyFeature"
+        mapping = df.select(original_field, convert_field).groupby(field).agg(
+            fn.first(convert_field).alias(convert_field)).collect()
+        return dict([(item[field], item[convert_field]) for item in mapping])
 
     def _transform(self, dataset):
         st = dataset.schema
