@@ -174,6 +174,19 @@ class OnlyForTest(SparkDLTestCase):
         print(words)
 
 
+class EasyFeatureBasicFunctionTest(SparkDLTestCase):
+    def test_getConvertMapping(self):
+        documentDF = self.session.createDataFrame([
+            ("Hi I heard about Spark", "Hi I heard about Spark", 2.0, 3.0, 1, 2, "yes"),
+            ("I wish Java could use case classes", "I wish Java could use case classes", 3.0, 4.0, 0, 4, "cool"),
+            ("Logistic regression models are neat", "Logistic regression models are neat", 4.0, 5.0, 2, 5, "wow")
+        ], ["sentence", "sentence2", "f1", "f2", "preds", "i1", "label"])
+
+        ef = EasyFeature(excludeFields=["sentence2", "f1", "f2", "preds", "i1"], outputCol="features")
+        df = ef.transform(documentDF)
+        print ef.getConvertMapping(df, "label")
+
+
 class TFTextEstimatorTest(SparkDLTestCase):
     def test_trainText(self):
         input_col = "text"

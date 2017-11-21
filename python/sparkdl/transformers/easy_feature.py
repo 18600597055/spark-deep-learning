@@ -2,7 +2,7 @@ from pyspark.ml import Estimator, Transformer
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import Imputer, Param, Params, TypeConverters, VectorAssembler, VectorIndexer, Tokenizer, \
     HashingTF, OneHotEncoder, QuantileDiscretizer, Normalizer
-from pyspark.ml.linalg import VectorUDT
+from pyspark.ml.linalg import VectorUDT, Vectors, DenseVector
 from pyspark.sql.types import *
 import pyspark.sql.functions as fn
 
@@ -302,6 +302,22 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
             print("should_assemble_columns: {}".format(should_assemble_columns))
 
             tmp_output_col = self.getOutputCol() + "_original" if self.getOutputColPNorm() is not None else self.getOutputCol()
+
+            schema_mapping = dict([(item.name, item.dataType) for item in df.schema.fields])
+            replace_columns = []
+            for item in should_assemble_columns:
+                if schema_mapping[item] == ArrayType(IntegerType(), True):
+                    def dence(col):
+                        return Vectors.dense(col)
+
+                    dence_udf = fn.udf(dence, VectorUDT())
+                    df = df.withColumn("tmp_" + item, dence_udf(df[item]).alias(item))
+                    replace_columns.append(item)
+
+            for item in replace_columns:
+                should_assemble_columns.remove(item)
+                should_assemble_columns.append("tmp_" + item)
+
             assembler = VectorAssembler(inputCols=should_assemble_columns,
                                         outputCol=tmp_output_col)
             df = assembler.transform(df)
@@ -309,4 +325,4 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
                 df = Normalizer(inputCol=tmp_output_col, outputCol=self.getOutputCol(),
                                 p=self.getOutputColPNorm()).transform(df)
 
-        return df
+            return df
