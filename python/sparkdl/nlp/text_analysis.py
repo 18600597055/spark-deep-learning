@@ -12,7 +12,9 @@ class TextAnalysis(object):
     clf = None
 
     @staticmethod
-    def load_dic(dicDir, archiveAutoExtract, zipResources, words=[], stop_words=[]):
+    def load_dic(dicDir, archiveAutoExtract, zipResources, words=[], stop_words=[], tmp_dir=None):
+        if tmp_dir is not None:
+            jieba.dt.tmp_dir = tmp_dir
         if len(zipResources) == 0 and not TextAnalysis.is_loaded():
             for zr in zipResources:
                 if not archiveAutoExtract:

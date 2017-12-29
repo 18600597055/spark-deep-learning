@@ -19,7 +19,7 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
                  maxCategories=20,
                  embeddingSize=100,
                  sequenceLength=64,
-                 wordEmbeddingSavePath=None, outputCol=None, outputColPNorm=None):
+                 wordEmbeddingSavePath=None, outputCol=None, outputColPNorm=None, textAnalysisParams=None):
         super(EasyFeature, self).__init__()
         kwargs = self._input_kwargs
         self.ignoredColumns = []
@@ -35,13 +35,14 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
         self._setDefault(outputColPNorm=None)
         self._setDefault(excludeFields=[])
         self._setDefault(stopwords=[])
+        self._setDefault(textAnalysisParams={})
         self.setParams(**kwargs)
 
     @keyword_only
     def setParams(self, textFields=None, excludeFields=None, stopwords=[], wordMode=None, discretizerFields=None,
                   numFeatures=10000, maxCategories=20, embeddingSize=100,
                   sequenceLength=64,
-                  wordEmbeddingSavePath=None, outputCol=None, outputColPNorm=None):
+                  wordEmbeddingSavePath=None, outputCol=None, outputColPNorm=None, textAnalysisParams=None):
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
@@ -247,7 +248,8 @@ class EasyFeature(Transformer, HasEmbeddingSize, HasSequenceLength, HasOutputCol
             # analysis text fields
             analysis_fields = [(item + "_text") for item in text_fields]
             tat = TextAnalysisTransformer(inputCols=text_fields, outputCols=analysis_fields,
-                                          stopwords=self.getStopwords())
+                                          stopwords=self.getStopwords(),
+                                          textAnalysisParams=self.getTextAnalysisParams())
             df = tat.transform(df)
 
             # text fields will be processed as tfidf / embedding vector

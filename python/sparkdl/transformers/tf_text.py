@@ -249,23 +249,41 @@ class TextAnalysisTransformer(Transformer, Estimator, HasInputCols, HasOutputCol
                 zipfiles = [f.split("/")[-1] for f in sc._conf.get("spark.files").split(",") if
                             f.endswith("{}.zip".format(dicZipName))]
 
-        dicDir = self.getTextAnalysisParams()["dicDir"] if "dicDir" in self.getTextAnalysisParams() else ""
-        rank = self.getTextAnalysisParams()["extract_tags"] if "extract_tags" in self.getTextAnalysisParams() else {}
+        def analysisParam(name, default_value):
+            return self.getTextAnalysisParams()[name] if name in self.getTextAnalysisParams() else default_value
+
+        dicDir = analysisParam("dicDir", "")
+        rank = analysisParam("extract_tags", {})
+        tmp_dir = analysisParam("tmp_dir", None)
+        char_mode = analysisParam("char_mode", False)
         stopwords_br = sc.broadcast(self.getStopwords())
 
         def lcut(s):
-            TextAnalysis.load_dic(dicDir, archiveAutoExtract, zipfiles)
+            TextAnalysis.load_dic(dicDir, archiveAutoExtract, zipfiles, tmp_dir)
             words = []
-            if len(rank) > 0:
-                if "type" not in rank or rank["type"] == "textrank":
-                    words = jieba.analyse.textrank(s, topK=rank["topK"], withWeight=False)
-                if "type" in rank and rank["type"] == "tfidf":
-                    words = jieba.analyse.tfidf(s)
+
+            def _cut():
+                if len(rank) > 0:
+                    if "type" not in rank or rank["type"] == "textrank":
+                        words = jieba.analyse.textrank(s, topK=rank["topK"], withWeight=False)
+                    if "type" in rank and rank["type"] == "tfidf":
+                        words = jieba.analyse.tfidf(s)
+                else:
+                    words = jieba.lcut(s)
+                return words
+
+            def _chars():
+                return [word for word in unicode(s, "utf-8")]
+
+            if char_mode:
+                words = _cut()
             else:
-                words = jieba.lcut(s)
+                words = _chars()
+
             return [word for word in words if word.lower() not in stopwords_br.value]
 
         lcut_udf = udf(lcut, ArrayType(StringType()))
+
         select_expr = [(lcut_udf(input), self.getOutputCols()[self.getInputCols().index(input)]) for input in
                        self.getInputCols()]
         final_ds = dataset
