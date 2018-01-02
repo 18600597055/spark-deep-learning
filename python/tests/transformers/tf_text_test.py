@@ -218,8 +218,8 @@ class TFTextEstimatorTest(SparkDLTestCase):
         shutil.rmtree(mock_kafka_file)
 
 
-class A(SparkDLTestCase):
-    def test_a(self):
+class MsgQueueTest(SparkDLTestCase):
+    def test_read_data(self):
         df = self.session.range(0, 100)
         import tempfile
         mock_kafka_file = tempfile.mkdtemp()

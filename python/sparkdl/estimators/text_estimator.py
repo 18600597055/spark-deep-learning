@@ -292,7 +292,6 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                     should_break = False
                     while count < max_records:
                         item = queue.get(block=True)
-                        print("get {}".format(item))
                         if item == "_stop_":
                             should_break = True
                             break
