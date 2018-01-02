@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 # Copyright 2017 Databricks, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -160,12 +161,13 @@ class EasyFeatureTest(SparkDLTestCase):
 class OnlyForTest(SparkDLTestCase):
     def test(self):
         documentDF = self.session.createDataFrame([
-            ("Hi I heard about Spark", "Hi I heard about Spark", 2.0, 3.0, 1, 2),
-            ("I wish Java could use case classes", "I wish Java could use case classes", 3.0, 4.0, 0, 4),
+            (u"Hi I heard about Spark，中国", "Hi I heard about Spark", 2.0, 3.0, 1, 2),
+            (u"I wish Java could use case classes", "I wish Java could use case classes", 3.0, 4.0, 0, 4),
             ("Logistic regression models are neat", "Logistic regression models are neat", 4.0, 5.0, 2, 5)
         ], ["sentence", "sentence2", "f1", "f2", "preds", "i1"])
 
         ef = EasyFeature(textFields=["sentence"], excludeFields=["sentence2", "f1", "f2", "preds", "i1"],
+                         textAnalysisParams={"char_mode": True},
                          outputCol="features")
         df = ef.transform(documentDF)
         word_embedding = [item["word"] for item in ef.getWordEmbedding()]
@@ -210,8 +212,7 @@ class TFTextEstimatorTest(SparkDLTestCase):
                                               "mock_kafka_file": mock_kafka_file,
                                               "group_id": "sdl_1", "test_mode": True},
                                   runningMode="Normal",
-                                  fitParam=[{"epochs": 5, "batch_size": 64, "embedding_size": 100},
-                                            {"epochs": 5, "batch_size": 1, "embedding_size": 100}],
+                                  fitParam=[{"epochs": 5, "batch_size": 64, "embedding_size": 100}],
                                   mapFnParam=map_fun)
         estimator.fit(df).collect()
         shutil.rmtree(mock_kafka_file)

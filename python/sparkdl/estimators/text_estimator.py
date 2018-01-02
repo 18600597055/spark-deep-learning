@@ -18,16 +18,19 @@
 from __future__ import absolute_import, division, print_function
 
 import logging
+import multiprocessing
 import threading
 import time
 import os
 import sys
+import uuid
 
 from kafka import KafkaConsumer
 from kafka import KafkaProducer
 from pyspark.ml import Estimator
 from tensorflowonspark import TFCluster
 
+from sparkdl.estimators import msg_queue
 from sparkdl.param import keyword_only
 from sparkdl.param.shared_params import KafkaParam, FitParam, MapFnParam, RunningMode
 import sparkdl.utils.jvmapi as JVMAPI
@@ -220,7 +223,12 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
             params = baseParamDictBc.value
             params["fitParam"] = override_param_map
 
-            def _read_data(max_records=64):
+            authkey = uuid.uuid4().bytes
+            mgr = msg_queue.start(authkey=authkey, queues=['input'])
+
+            # addr = mgr.address
+
+            def from_kafka(args, mgr):
                 consumer = KafkaMockServer(0, mock_kafka_file) if kafka_test_mode else KafkaConsumer(topic,
                                                                                                      group_id=group_id,
                                                                                                      bootstrap_servers=bootstrap_servers,
@@ -233,8 +241,9 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                     while True:
                         if kafka_test_mode:
                             time.sleep(1)
-                        messages = consumer.poll(timeout_ms=1000, max_records=max_records)
-                        group_msgs = []
+                        messages = consumer.poll(timeout_ms=1000, max_records=64)
+                        queue = mgr.get_queue("input")
+                        group_msgs_count = 0
                         for tp, records in messages.items():
                             for record in records:
                                 try:
@@ -242,12 +251,11 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                                     if msg_value == "_stop_":
                                         stop_count += 1
                                     else:
-                                        group_msgs.append(msg_value)
+                                        queue.put(msg_value, block=True)
+                                        group_msgs_count += 1
                                 except:
                                     fail_msg_count += 0
                                     pass
-                        if len(group_msgs) > 0:
-                            yield group_msgs
 
                         if kafka_test_mode:
                             print(
@@ -255,14 +263,38 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                                 "group_msgs = {} "
                                 "stop_flag_num = {} "
                                 "fail_msg_count = {}".format(stop_count,
-                                                             len(group_msgs),
+                                                             group_msgs_count,
                                                              stop_flag_num,
                                                              fail_msg_count))
 
-                        if stop_count >= stop_flag_num and len(group_msgs) == 0:
+                        if stop_count >= stop_flag_num and group_msgs_count == 0:
+                            queue.put("_stop_", block=True)
                             break
                 finally:
                     consumer.close()
+
+            def asyn_produce():
+                p = multiprocessing.Process(target=from_kafka, args=({}, mgr))
+                p.start()
+
+            def _read_data(max_records=64):
+                asyn_produce()
+                queue = mgr.get_queue("input")
+                count = 0
+                msg_group = []
+                while True:
+                    should_break = False
+                    while count < max_records:
+                        item = queue.get(block=True)
+                        if item == "_stop_":
+                            should_break = True
+                            break
+                        msg_group.append(item)
+                    yield msg_group
+                    if should_break:
+                        print("_stop_ msg received, All data consumed.")
+                        break
+                queue.task_done()
 
             result = self.getMapFnParam()(args={"params": params},
                                           ctx=None,

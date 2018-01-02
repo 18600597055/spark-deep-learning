@@ -259,7 +259,8 @@ class TextAnalysisTransformer(Transformer, Estimator, HasInputCols, HasOutputCol
         stopwords_br = sc.broadcast(self.getStopwords())
 
         def lcut(s):
-            TextAnalysis.load_dic(dicDir, archiveAutoExtract, zipfiles, tmp_dir)
+            TextAnalysis.load_dic(dicDir=dicDir, archiveAutoExtract=archiveAutoExtract, zipResources=zipfiles,
+                                  tmp_dir=tmp_dir)
             words = []
 
             def _cut():
@@ -273,12 +274,12 @@ class TextAnalysisTransformer(Transformer, Estimator, HasInputCols, HasOutputCol
                 return words
 
             def _chars():
-                return [word for word in unicode(s, "utf-8")]
+                return [word for word in s]
 
             if char_mode:
-                words = _cut()
-            else:
                 words = _chars()
+            else:
+                words = _cut()
 
             return [word for word in words if word.lower() not in stopwords_br.value]
 
