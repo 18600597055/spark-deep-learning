@@ -286,10 +286,12 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
             def _read_data(max_records=64):
                 asyn_produce()
                 queue = mgr.get_queue("input")
+                # now_time = lambda: int(round(time.time() * 1000))
                 while True:
                     msg_group = []
                     count = 0
                     should_break = False
+                    # start_time = now_time()
                     while count < max_records:
                         item = queue.get(block=True)
                         if item == "_stop_":
@@ -297,6 +299,8 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                             break
                         msg_group.append(item)
                         count += 1
+                    # ms = now_time() - start_time
+                    # print("consume from queue time:{}".format(ms))
                     yield msg_group
                     if should_break:
                         print("_stop_ msg received, All data consumed.")
