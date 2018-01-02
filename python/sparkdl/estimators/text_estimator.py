@@ -179,7 +179,12 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
 
         from time import gmtime, strftime
         kafaParams = self.getKafkaParam()
-        topic = kafaParams["topic"] + "_" + strftime("%Y-%m-%d-%H-%M-%S", gmtime())
+
+        def reuse_topic():
+            return True if "reuse_topic" in kafaParams and kafaParams["reuse_topic"] else False
+
+        topic = (kafaParams["topic"] if reuse_topic()
+                 else kafaParams["topic"] + "_" + strftime("%Y-%m-%d-%H-%M-%S", gmtime()))
         group_id = kafaParams["group_id"]
         bootstrap_servers = kafaParams["bootstrap_servers"]
         kafka_test_mode = kafaParams["test_mode"] if "test_mode" in kafaParams else False
@@ -200,11 +205,12 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
 
             dataset.rdd.mapPartitionsWithIndex(_write_partition).count()
 
-        if kafka_test_mode:
-            _write_data()
-        else:
-            t = threading.Thread(target=_write_data)
-            t.start()
+        if not reuse_topic():
+            if kafka_test_mode:
+                _write_data()
+            else:
+                t = threading.Thread(target=_write_data)
+                t.start()
 
         stop_flag_num = dataset.rdd.getNumPartitions()
         sc = JVMAPI._curr_sc()
@@ -290,6 +296,7 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                             should_break = True
                             break
                         msg_group.append(item)
+                        count += 1
                     yield msg_group
                     if should_break:
                         print("_stop_ msg received, All data consumed.")
