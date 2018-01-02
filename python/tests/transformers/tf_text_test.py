@@ -218,6 +218,31 @@ class TFTextEstimatorTest(SparkDLTestCase):
         shutil.rmtree(mock_kafka_file)
 
 
+class A(SparkDLTestCase):
+    def test_a(self):
+        df = self.session.range(0, 100)
+        import tempfile
+        mock_kafka_file = tempfile.mkdtemp()
+
+        def kk(args={}, ctx=None, _read_data=None):
+            count = 0
+            for data in _read_data(max_records=10):
+                print(data)
+                count += 1
+                if count > 100:
+                    break
+
+        # create a estimator to training where map_fun contains tensorflow's code
+        estimator = TextEstimator(kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
+                                              "mock_kafka_file": mock_kafka_file,
+                                              "group_id": "sdl_1", "test_mode": True},
+                                  runningMode="Normal",
+                                  fitParam=[{"epochs": 5, "batch_size": 64, "embedding_size": 100}],
+                                  mapFnParam=kk)
+        estimator.fit(df).collect()
+        shutil.rmtree(mock_kafka_file)
+
+
 class TFTextTransformerSkLearnTest(SparkDLTestCase):
     def test_trainText(self):
         documentDF = self.session.createDataFrame([

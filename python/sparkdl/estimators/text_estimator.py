@@ -286,12 +286,13 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
             def _read_data(max_records=64):
                 asyn_produce()
                 queue = mgr.get_queue("input")
-                count = 0
-                msg_group = []
                 while True:
+                    msg_group = []
+                    count = 0
                     should_break = False
                     while count < max_records:
                         item = queue.get(block=True)
+                        print("get {}".format(item))
                         if item == "_stop_":
                             should_break = True
                             break
