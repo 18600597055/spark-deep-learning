@@ -241,15 +241,17 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                                                                                                      auto_offset_reset="earliest",
                                                                                                      enable_auto_commit=False
                                                                                                      )
+                max_records = args["max_records"]
                 try:
                     stop_count = 0
                     fail_msg_count = 0
                     while True:
                         if kafka_test_mode:
                             time.sleep(1)
-                        messages = consumer.poll(timeout_ms=1000, max_records=64)
+                        messages = consumer.poll(timeout_ms=1000, max_records=max_records)
                         queue = mgr.get_queue("input")
                         group_msgs_count = 0
+                        group_msgs = []
                         for tp, records in messages.items():
                             for record in records:
                                 try:
@@ -257,12 +259,13 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                                     if msg_value == "_stop_":
                                         stop_count += 1
                                     else:
-                                        queue.put(msg_value, block=True)
+                                        group_msgs.append(msg_value)
                                         group_msgs_count += 1
                                 except:
                                     fail_msg_count += 0
                                     pass
-
+                        if len(group_msgs) > 0:
+                            queue.put(group_msgs, block=True)
                         if kafka_test_mode:
                             print(
                                 "stop_count = {} "
@@ -274,33 +277,64 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                                                              fail_msg_count))
 
                         if stop_count >= stop_flag_num and group_msgs_count == 0:
-                            queue.put("_stop_", block=True)
+                            queue.put(["_stop_"], block=True)
                             break
                 finally:
                     consumer.close()
 
-            def asyn_produce():
-                p = multiprocessing.Process(target=from_kafka, args=({}, mgr))
-                p.start()
+            def _read_data(max_records=64, consume_threads=1, print_consume_time=False):
 
-            def _read_data(max_records=64):
-                asyn_produce()
+                def asyn_produce(consume_threads=1):
+                    print("start consuming")
+                    x = 0
+                    while x < consume_threads:
+                        x += 1
+                        process = multiprocessing.Process(target=from_kafka, args=({"max_records": max_records}, mgr))
+                        process.start()
+
+                asyn_produce(consume_threads=consume_threads)
+                print("start consuming from queue")
                 queue = mgr.get_queue("input")
-                # now_time = lambda: int(round(time.time() * 1000))
+
+                def now_time():
+                    return int(round(time.time() * 1000))
+
+                leave_msg_group = []
                 while True:
                     msg_group = []
                     count = 0
                     should_break = False
-                    # start_time = now_time()
+
+                    if print_consume_time:
+                        start_time = now_time()
+                    # wait_count = 0
                     while count < max_records:
-                        item = queue.get(block=True)
-                        if item == "_stop_":
+                        # if queue.empty():
+                        #     wait_count += 1
+                        items = queue.get(block=True)
+                        if items[-1] == "_stop_":
                             should_break = True
                             break
-                        msg_group.append(item)
+                        items = items + leave_msg_group
+                        leave_msg_group = []
+                        items_size = len(items)
+
+                        if items_size == max_records:
+                            msg_group = items
+                            break
+                        if items_size > max_records:
+                            msg_group = items[0:max_records]
+                            leave_msg_group = items[max_records:items_size]
+                            break
+                        if items_size < max_records:
+                            leave_msg_group = leave_msg_group + items
                         count += 1
-                    # ms = now_time() - start_time
-                    # print("consume from queue time:{}".format(ms))
+                    # if wait_count > 1:
+                    #     print("queue get blocked count:{} when batch size is:{}".format(wait_count, max_records))
+                    if print_consume_time:
+                        ms = now_time() - start_time
+                        print("queue fetch {} consume:{}".format(max_records, ms))
+
                     yield msg_group
                     if should_break:
                         print("_stop_ msg received, All data consumed.")

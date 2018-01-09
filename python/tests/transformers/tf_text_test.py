@@ -210,7 +210,7 @@ class TFTextEstimatorTest(SparkDLTestCase):
         # create a estimator to training where map_fun contains tensorflow's code
         estimator = TextEstimator(kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
                                               "mock_kafka_file": mock_kafka_file,
-                                              "group_id": "sdl_1", "test_mode": True},
+                                              "group_id": "sdl_1", "test_mode": False},
                                   runningMode="Normal",
                                   fitParam=[{"epochs": 5, "batch_size": 64, "embedding_size": 100}],
                                   mapFnParam=map_fun)
@@ -220,22 +220,20 @@ class TFTextEstimatorTest(SparkDLTestCase):
 
 class MsgQueueTest(SparkDLTestCase):
     def test_read_data(self):
-        df = self.session.range(0, 100)
+        df = self.session.range(0, 10000)
         import tempfile
         mock_kafka_file = tempfile.mkdtemp()
 
         def kk(args={}, ctx=None, _read_data=None):
             count = 0
-            for data in _read_data(max_records=10):
-                print(data)
+            for data in _read_data(max_records=128, consume_threads=3, print_consume_time=False):
+                print(len(data))
                 count += 1
-                if count > 100:
-                    break
 
         # create a estimator to training where map_fun contains tensorflow's code
         estimator = TextEstimator(kafkaParam={"bootstrap_servers": ["127.0.0.1"], "topic": "test",
                                               "mock_kafka_file": mock_kafka_file,
-                                              "group_id": "sdl_1", "test_mode": True},
+                                              "group_id": "sdl_1", "test_mode": False},
                                   runningMode="Normal",
                                   fitParam=[{"epochs": 5, "batch_size": 64, "embedding_size": 100}],
                                   mapFnParam=kk)

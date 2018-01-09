@@ -8,7 +8,7 @@ from __future__ import nested_scopes
 from __future__ import print_function
 
 from multiprocessing.managers import BaseManager
-from multiprocessing import JoinableQueue
+from multiprocessing import JoinableQueue, Queue
 
 
 class MsgQueue(BaseManager): pass
