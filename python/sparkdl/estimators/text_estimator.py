@@ -230,7 +230,7 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
             params["fitParam"] = override_param_map
 
             authkey = uuid.uuid4().bytes
-            mgr = msg_queue.start(authkey=authkey, queues=['input'])
+            mgr = msg_queue.start(authkey=authkey, queue_max_size=10, queues=['input'])
 
             # addr = mgr.address
 
@@ -307,10 +307,10 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
 
                     if print_consume_time:
                         start_time = now_time()
-                    # wait_count = 0
+                    wait_count = 0
                     while count < max_records:
-                        # if queue.empty():
-                        #     wait_count += 1
+                        if queue.empty():
+                            wait_count += 1
                         items = queue.get(block=True)
                         if items[-1] == "_stop_":
                             should_break = True
@@ -329,8 +329,8 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                         if items_size < max_records:
                             leave_msg_group = leave_msg_group + items
                         count += 1
-                    # if wait_count > 1:
-                    #     print("queue get blocked count:{} when batch size is:{}".format(wait_count, max_records))
+                    if wait_count > 1:
+                        print("queue get blocked count:{} when batch size is:{}".format(wait_count, max_records))
                     if print_consume_time:
                         ms = now_time() - start_time
                         print("queue fetch {} consume:{}".format(max_records, ms))
