@@ -196,8 +196,8 @@ class TextEstimator(Estimator, KafkaParam, FitParam, RunningMode,
                     bootstrap_servers=bootstrap_servers)
                 try:
                     for d in d_iter:
-                        producer.send(topic, pickle.dumps(d))
-                    producer.send(topic, pickle.dumps("_stop_"))
+                        producer.send(topic, pickle.dumps(d, 2))
+                    producer.send(topic, pickle.dumps("_stop_", 2))
                     producer.flush()
                 finally:
                     producer.close()
@@ -398,7 +398,7 @@ class KafkaMockServer(object):
         couter = 0
         for i in records:
             obj = MockRecord()
-            obj.value = pickle.dumps(i)
+            obj.value = pickle.dumps(i, 2)
             couter += 1
             result[str(couter) + "_"] = [obj]
         self.sended = True

@@ -26,3 +26,6 @@ project/plugins/project/
 .DS_Store
 
 python/sparkdl.egg-info/
+
+python/sparkdl/estimators/T.py
+python/sparkdl/estimators/T2.py
